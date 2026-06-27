@@ -1,0 +1,75 @@
+# Git files
+.git
+.github
+.gitignore
+.gitattributes
+
+# Environment files
+.env
+.env.prod
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode
+.idea
+*.code-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build and temporary files
+build/
+dist/
+*.exe
+*.pdb
+*.dll
+main.exe
+
+# Logs and databases
+*.log
+*.db
+*.sqlite3
+
+# Cache directories
+.cache
+__pycache__
+node_modules
+
+# Test related
+coverage.txt
+*.test
+*.out
+
+# Documentation
+README.md
+DEVELOPMENT.md
+ARCHITECTURE.md
+DATABASE.md
+DEPLOYMENT.md
+API_GUIDE.md
+CHOREO_DEPLOYMENT_GUIDE.md
+
+# Scripts and tools
+scripts/
+*.sh
+*.ps1
+
+# Docker files (don't include in build context)
+Dockerfile*
+docker-compose*
+
+# CI/CD
+.choreo/
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Misc
+Makefile
+swagger.yaml
+test_search_api.sh
+*.md
+LICENSE
