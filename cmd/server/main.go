@@ -388,8 +388,7 @@ func main() {
 	router.Use(cors.New(corsConfig))
 
 	// Health check endpoint
-	router.GET("/health", healthCheckHandler())
-	router.GET("/ready", readinessCheckHandler(db))
+	router.GET("/health", healthCheckHandler(db))
 
 	// Set environment in context for development mode
 	router.Use(func(c *gin.Context) {
@@ -1133,33 +1132,26 @@ func requestLogger(logger *logrus.Logger) gin.HandlerFunc {
 	}
 }
 
-// healthCheckHandler returns a process health check endpoint.
-// It should stay lightweight so platform probes do not fail just because the database is temporarily unavailable.
-func healthCheckHandler() gin.HandlerFunc {
+// healthCheckHandler returns a health check endpoint
+func healthCheckHandler(db database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":    "healthy",
-			"version":   version,
-			"timestamp": time.Now().Unix(),
-		})
-	}
-}
-
-// readinessCheckHandler returns a database readiness check endpoint.
-func readinessCheckHandler(db database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
+		// Check database connection
+		dbStatus := "healthy"
 		if err := db.Ping(); err != nil {
+			dbStatus = "unhealthy"
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"status":   "unhealthy",
-				"database": "unhealthy",
+				"database": dbStatus,
 				"error":    err.Error(),
 			})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"status":   "healthy",
-			"database": "healthy",
+			"status":    "healthy",
+			"database":  dbStatus,
+			"version":   version,
+			"timestamp": time.Now().Unix(),
 		})
 	}
 }
