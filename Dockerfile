@@ -28,7 +28,7 @@ FROM alpine:latest
 
 # Install security updates and certificates
 RUN apk update && apk upgrade --no-cache && \
-    apk --no-cache add ca-certificates tzdata && \
+    apk --no-cache add ca-certificates tzdata curl && \
     update-ca-certificates
 
 # Set metadata
@@ -51,7 +51,7 @@ EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+    CMD curl -fsS http://localhost:8080/health >/dev/null || exit 1
 
 # Command to run the SMS Authentication backend
 CMD ["./sms-auth-backend"]
