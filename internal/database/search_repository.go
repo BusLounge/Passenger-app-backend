@@ -529,6 +529,7 @@ func (r *SearchRepository) FindDirectTrips(
 	query := `
 		SELECT DISTINCT ON (st.id)
 			st.id as trip_id,
+			ts.schedule_name,
 			COALESCE(bor.custom_route_name, mr_bor.route_name, mr_permit.route_name) as route_name,
 			COALESCE(mr_bor.route_number, mr_permit.route_number) as route_number,
 			b.bus_type,
@@ -558,6 +559,7 @@ func (r *SearchRepository) FindDirectTrips(
 		FROM scheduled_trips st
 		-- Join bus owner route
 		LEFT JOIN bus_owner_routes bor ON st.bus_owner_route_id = bor.id
+		LEFT JOIN trip_schedules ts ON ts.id = st.trip_schedule_id
 		-- Route name/number via bus_owner_route path
 		LEFT JOIN master_routes mr_bor ON bor.master_route_id = mr_bor.id
 		-- Join permit for fare and bus
@@ -605,6 +607,7 @@ func (r *SearchRepository) FindDirectTrips(
 	// Use intermediate struct to scan flat SQL results
 	type tripWithFeatures struct {
 		TripID           uuid.UUID `db:"trip_id"`
+		ScheduleName     *string   `db:"schedule_name"`
 		RouteName        string    `db:"route_name"`
 		RouteNumber      *string   `db:"route_number"`
 		BusType          *string   `db:"bus_type"` // Nullable - bus might not have type set
@@ -745,6 +748,7 @@ func (r *SearchRepository) FindDirectTrips(
 
 		trips[i] = models.TripResult{
 			TripID:           temp.TripID,
+			ScheduleName:     temp.ScheduleName,
 			RouteName:        temp.RouteName,
 			RouteNumber:      temp.RouteNumber,
 			BusType:          busType,
@@ -1077,6 +1081,7 @@ func (r *SearchRepository) FindTransitJourneys(fromName, toName string, fromLat,
 			for _, t2 := range trips2 {
 				transitTrip := models.TripResult{
 					TripID:           uuid.New(),
+					ScheduleName:     t1.ScheduleName,
 					RouteName:        fmt.Sprintf("via %s", h.HubName),
 					IsTransit:        true,
 					TransitPoint:     h.HubName,
@@ -1222,6 +1227,7 @@ SELECT
     boarding_stop.stop_name   AS boarding_point,
     dropping_stop.stop_name   AS dropping_point,
     sched.trip_id,
+    sched.schedule_name,
     sched.departure_time,
     sched.estimated_arrival,
     sched.duration_minutes,
@@ -1242,6 +1248,7 @@ JOIN master_route_stops dropping_stop ON dropping_stop.id = mr_data.dropping_sto
 JOIN LATERAL (
     SELECT
         st.id::text                                                             AS trip_id,
+        ts.schedule_name                                                        AS schedule_name,
         st.departure_datetime                                                   AS departure_time,
         st.departure_datetime +
             (COALESCE(st.estimated_duration_minutes,0) * INTERVAL '1 minute')  AS estimated_arrival,
@@ -1259,6 +1266,7 @@ JOIN LATERAL (
         COALESCE(bor.master_route_id, rp.master_route_id)::text                AS trip_master_route_id
     FROM scheduled_trips st
     LEFT JOIN bus_owner_routes bor          ON bor.id = st.bus_owner_route_id
+    LEFT JOIN trip_schedules ts             ON ts.id  = st.trip_schedule_id
     LEFT JOIN route_permits rp              ON rp.id  = st.permit_id
     LEFT JOIN buses b                       ON b.license_plate = rp.bus_registration_number
     LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
@@ -1283,6 +1291,7 @@ LIMIT $7
 		BoardingPoint     string    `db:"boarding_point"`
 		DroppingPoint     string    `db:"dropping_point"`
 		TripID            string    `db:"trip_id"`
+		ScheduleName      *string   `db:"schedule_name"`
 		DepartureTime     time.Time `db:"departure_time"`
 		EstimatedArrival  time.Time `db:"estimated_arrival"`
 		DurationMinutes   int       `db:"duration_minutes"`
@@ -1317,6 +1326,7 @@ LIMIT $7
 		dropLounge := row.DropLoungeName
 		trips = append(trips, models.TripResult{
 			TripID:           tripID,
+			ScheduleName:     row.ScheduleName,
 			RouteName:        row.RouteName,
 			RouteNumber:      row.RouteNumber,
 			BusType:          row.BusType,
@@ -1497,7 +1507,7 @@ direct_results AS (
            dp.route_id::text AS r1_master_id,
            dp.main_route_origin AS r1_main_origin, dp.main_route_destination AS r1_main_destination,
            bs.stop_name AS l1_boarding, ds.stop_name AS l1_dropping,
-           s1.trip_id, s1.departure_time AS l1_dep, s1.estimated_arrival AS l1_arr,
+           s1.trip_id, s1.schedule_name AS l1_schedule_name, s1.departure_time AS l1_dep, s1.estimated_arrival AS l1_arr,
            s1.duration_minutes AS l1_duration, s1.total_seats AS l1_total_seats,
            s1.fare AS l1_fare, s1.bus_type AS l1_bus_type,
            s1.is_bookable AS l1_is_bookable,
@@ -1510,14 +1520,14 @@ direct_results AS (
            NULL::text AS r2_route_name, NULL::text AS r2_route_number,
            NULL::text AS r2_main_origin, NULL::text AS r2_main_destination,
            NULL::text AS l2_boarding, NULL::text AS l2_dropping,
-           NULL::text AS l2_trip_id, NULL::timestamptz AS l2_dep,
+           NULL::text AS l2_trip_id, NULL::text AS l2_schedule_name, NULL::timestamptz AS l2_dep,
            NULL::timestamptz AS l2_arr, 0::float AS l2_fare,
            NULL::text AS l2_bus_type, false AS l2_is_bookable
     FROM direct_pairs dp
     JOIN master_route_stops bs ON bs.id = dp.boarding_stop_id
     JOIN master_route_stops ds ON ds.id = dp.dropping_stop_id
     JOIN LATERAL (
-        SELECT st.id::text AS trip_id, st.departure_datetime AS departure_time,
+        SELECT st.id::text AS trip_id, ts.schedule_name AS schedule_name, st.departure_datetime AS departure_time,
                st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0)*INTERVAL'1 minute') AS estimated_arrival,
                COALESCE(st.estimated_duration_minutes,0) AS duration_minutes,
                COALESCE(bslt.total_seats,0) AS total_seats,
@@ -1531,6 +1541,7 @@ direct_results AS (
                COALESCE(bor.master_route_id,rp.master_route_id)::text AS trip_master_route_id
         FROM scheduled_trips st
         LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+        LEFT JOIN trip_schedules ts    ON ts.id  = st.trip_schedule_id
         LEFT JOIN route_permits rp     ON rp.id  = st.permit_id
         LEFT JOIN buses b              ON b.license_plate = rp.bus_registration_number
         LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
@@ -1550,7 +1561,7 @@ transit_results AS (
            tc.r1_id::text AS r1_master_id,
            mr1.origin_city AS r1_main_origin, mr1.destination_city AS r1_main_destination,
            b1s.stop_name AS l1_boarding, d1s.stop_name AS l1_dropping,
-           l1.trip_id, l1.departure_time AS l1_dep, l1.estimated_arrival AS l1_arr,
+           l1.trip_id, l1.schedule_name AS l1_schedule_name, l1.departure_time AS l1_dep, l1.estimated_arrival AS l1_arr,
            l1.duration_minutes AS l1_duration, l1.total_seats AS l1_total_seats,
            l1.fare AS l1_fare, l1.bus_type AS l1_bus_type,
            l1.is_bookable AS l1_is_bookable,
@@ -1562,7 +1573,7 @@ transit_results AS (
            mr2.route_name AS r2_route_name, mr2.route_number AS r2_route_number,
            mr2.origin_city AS r2_main_origin, mr2.destination_city AS r2_main_destination,
            b2s.stop_name AS l2_boarding, d2s.stop_name AS l2_dropping,
-           l2.trip_id AS l2_trip_id, l2.departure_time AS l2_dep,
+           l2.trip_id AS l2_trip_id, l2.schedule_name AS l2_schedule_name, l2.departure_time AS l2_dep,
            l2.estimated_arrival AS l2_arr, l2.fare AS l2_fare,
            l2.bus_type AS l2_bus_type, l2.is_bookable AS l2_is_bookable
     FROM transit_chains tc
@@ -1573,7 +1584,7 @@ transit_results AS (
     JOIN master_route_stops b2s ON b2s.id = tc.b2_id
     JOIN master_route_stops d2s ON d2s.id = tc.d2_id
     JOIN LATERAL (
-        SELECT st.id::text AS trip_id, st.departure_datetime AS departure_time,
+        SELECT st.id::text AS trip_id, ts.schedule_name AS schedule_name, st.departure_datetime AS departure_time,
                st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0)*INTERVAL'1 minute') AS estimated_arrival,
                COALESCE(st.estimated_duration_minutes,0) AS duration_minutes,
                COALESCE(bslt.total_seats,0) AS total_seats,
@@ -1585,6 +1596,7 @@ transit_results AS (
                COALESCE(b.has_refreshments,false) AS has_refreshments
         FROM scheduled_trips st
         LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+        LEFT JOIN trip_schedules ts    ON ts.id  = st.trip_schedule_id
         LEFT JOIN route_permits rp     ON rp.id  = st.permit_id
         LEFT JOIN buses b              ON b.license_plate = rp.bus_registration_number
         LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
@@ -1594,12 +1606,13 @@ transit_results AS (
         ORDER BY st.departure_datetime ASC
     ) l1 ON true
     JOIN LATERAL (
-        SELECT st.id::text AS trip_id, st.departure_datetime AS departure_time,
+        SELECT st.id::text AS trip_id, ts.schedule_name AS schedule_name, st.departure_datetime AS departure_time,
                st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0)*INTERVAL'1 minute') AS estimated_arrival,
                COALESCE(rp.approved_fare,st.base_fare,0) AS fare,
                COALESCE(b.bus_type,'Normal') AS bus_type, st.is_bookable
         FROM scheduled_trips st
         LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+        LEFT JOIN trip_schedules ts    ON ts.id  = st.trip_schedule_id
         LEFT JOIN route_permits rp     ON rp.id  = st.permit_id
         LEFT JOIN buses b              ON b.license_plate = rp.bus_registration_number
         WHERE COALESCE(bor.master_route_id,rp.master_route_id) = tc.r2_id
@@ -1634,6 +1647,7 @@ LIMIT $7;
 		L1Boarding         string     `db:"l1_boarding"`
 		L1Dropping         string     `db:"l1_dropping"`
 		TripID             string     `db:"trip_id"`
+		L1ScheduleName     *string    `db:"l1_schedule_name"`
 		L1Dep              time.Time  `db:"l1_dep"`
 		L1Arr              time.Time  `db:"l1_arr"`
 		L1Duration         int        `db:"l1_duration"`
@@ -1657,6 +1671,7 @@ LIMIT $7;
 		L2Boarding         *string    `db:"l2_boarding"`
 		L2Dropping         *string    `db:"l2_dropping"`
 		L2TripID           *string    `db:"l2_trip_id"`
+		L2ScheduleName     *string    `db:"l2_schedule_name"`
 		L2Dep              *time.Time `db:"l2_dep"`
 		L2Arr              *time.Time `db:"l2_arr"`
 		L2Fare             float64    `db:"l2_fare"`
@@ -1680,6 +1695,7 @@ LIMIT $7;
 		if row.RouteType == "direct" {
 			results = append(results, models.TripResult{
 				TripID:           l1ID,
+				ScheduleName:     row.L1ScheduleName,
 				RouteName:        row.R1RouteName,
 				RouteNumber:      row.R1RouteNumber,
 				BusType:          row.L1BusType,
@@ -1745,7 +1761,7 @@ LIMIT $7;
 			}
 
 			leg1 := models.TripResult{
-				TripID: l1ID, RouteName: row.R1RouteName, RouteNumber: row.R1RouteNumber,
+				TripID: l1ID, ScheduleName: row.L1ScheduleName, RouteName: row.R1RouteName, RouteNumber: row.R1RouteNumber,
 				BusType: row.L1BusType, DepartureTime: row.L1Dep, EstimatedArrival: row.L1Arr,
 				DurationMinutes: row.L1Duration, TotalSeats: row.L1TotalSeats,
 				Fare: row.L1Fare, BoardingPoint: row.L1Boarding, DroppingPoint: row.L1Dropping,
@@ -1764,7 +1780,7 @@ LIMIT $7;
 				leg2BusType = *row.L2BusType
 			}
 			leg2 := models.TripResult{
-				TripID: l2ID, RouteName: r2Name, RouteNumber: row.R2RouteNumber,
+				TripID: l2ID, ScheduleName: row.L2ScheduleName, RouteName: r2Name, RouteNumber: row.R2RouteNumber,
 				BusType: leg2BusType, DepartureTime: l2Dep, EstimatedArrival: l2Arr,
 				Fare: row.L2Fare, BoardingPoint: l2Boarding, DroppingPoint: l2Dropping,
 				IsBookable:           row.L2IsBookable,
@@ -1774,6 +1790,7 @@ LIMIT $7;
 
 			results = append(results, models.TripResult{
 				TripID:               l1ID,
+				ScheduleName:         row.L1ScheduleName,
 				RouteName:            fmt.Sprintf("%s → %s", row.R1RouteName, r2Name),
 				BusType:              row.L1BusType,
 				DepartureTime:        row.L1Dep,
@@ -1884,6 +1901,7 @@ SELECT
     boarding_stop.stop_name   AS boarding_point,
     mr_data.drop_stop_name    AS dropping_point,
     sched.trip_id,
+    sched.schedule_name,
     sched.departure_time,
     sched.estimated_arrival,
     sched.duration_minutes,
@@ -1903,6 +1921,7 @@ JOIN master_route_stops boarding_stop ON boarding_stop.id = mr_data.boarding_sto
 JOIN LATERAL (
     SELECT
         st.id::text                                                             AS trip_id,
+        ts.schedule_name                                                        AS schedule_name,
         st.departure_datetime                                                   AS departure_time,
         st.departure_datetime +
             (COALESCE(st.estimated_duration_minutes,0) * INTERVAL '1 minute')  AS estimated_arrival,
@@ -1920,6 +1939,7 @@ JOIN LATERAL (
         COALESCE(bor.master_route_id, rp.master_route_id)::text                AS trip_master_route_id
     FROM scheduled_trips st
     LEFT JOIN bus_owner_routes bor          ON bor.id = st.bus_owner_route_id
+    LEFT JOIN trip_schedules ts             ON ts.id  = st.trip_schedule_id
     LEFT JOIN route_permits rp              ON rp.id  = st.permit_id
     LEFT JOIN buses b                       ON b.license_plate = rp.bus_registration_number
     LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
@@ -1945,6 +1965,7 @@ LIMIT $6
 		BoardingPoint     string    `db:"boarding_point"`
 		DroppingPoint     string    `db:"dropping_point"`
 		TripID            string    `db:"trip_id"`
+		ScheduleName      *string   `db:"schedule_name"`
 		DepartureTime     time.Time `db:"departure_time"`
 		EstimatedArrival  time.Time `db:"estimated_arrival"`
 		DurationMinutes   int       `db:"duration_minutes"`
@@ -1978,6 +1999,7 @@ LIMIT $6
 		startLounge := row.StartLoungeName
 		trips = append(trips, models.TripResult{
 			TripID:           tripID,
+			ScheduleName:     row.ScheduleName,
 			RouteName:        row.RouteName,
 			RouteNumber:      row.RouteNumber,
 			BusType:          row.BusType,
@@ -2100,12 +2122,12 @@ SELECT
     mc.tl_name as transit_lounge_name, mc.tl_id::text as transit_lounge_id,
     mc.dl_name as drop_lounge_name, mc.dl_dist as drop_dist_m,
     -- Leg 1 Details
-    l1.trip_id as l1_trip_id, l1.departure_time as l1_dep, l1.estimated_arrival as l1_arr,
+    l1.trip_id as l1_trip_id, l1.schedule_name as l1_schedule_name, l1.departure_time as l1_dep, l1.estimated_arrival as l1_arr,
     l1.route_name as l1_route_name, l1.route_number as l1_route_number, l1.fare as l1_fare,
     l1.bus_type as l1_bus_type, l1.master_route_id as l1_master_id,
     b1.stop_name as l1_boarding, d1.stop_name as l1_dropping,
     -- Leg 2 Details
-    l2.trip_id as l2_trip_id, l2.departure_time as l2_dep, l2.estimated_arrival as l2_arr,
+    l2.trip_id as l2_trip_id, l2.schedule_name as l2_schedule_name, l2.departure_time as l2_dep, l2.estimated_arrival as l2_arr,
     l2.route_name as l2_route_name, l2.route_number as l2_route_number, l2.fare as l2_fare,
     l2.bus_type as l2_bus_type, l2.master_route_id as l2_master_id,
     b2.stop_name as l2_boarding, d2.stop_name as l2_dropping
@@ -2115,23 +2137,25 @@ JOIN master_route_stops d1 ON d1.id = mc.d1_id
 JOIN master_route_stops b2 ON b2.id = mc.b2_id
 JOIN master_route_stops d2 ON d2.id = mc.d2_id
 JOIN LATERAL (
-    SELECT st.id::text as trip_id, st.departure_datetime as departure_time,
+    SELECT st.id::text as trip_id, ts.schedule_name as schedule_name, st.departure_datetime as departure_time,
            st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0) * INTERVAL '1 minute') as estimated_arrival,
            mr.route_name, mr.route_number, COALESCE(st.base_fare, 0) as fare,
            COALESCE(b.bus_type, 'Normal') as bus_type, mr.id::text as master_route_id
     FROM scheduled_trips st
     JOIN master_routes mr ON mr.id = st.master_route_id
+    LEFT JOIN trip_schedules ts ON ts.id = st.trip_schedule_id
     LEFT JOIN buses b ON b.id = st.bus_id
     WHERE st.master_route_id = mc.r1_id AND st.departure_datetime >= $6
     ORDER BY st.departure_datetime ASC LIMIT 1
 ) l1 ON true
 JOIN LATERAL (
-    SELECT st.id::text as trip_id, st.departure_datetime as departure_time,
+    SELECT st.id::text as trip_id, ts.schedule_name as schedule_name, st.departure_datetime as departure_time,
            st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0) * INTERVAL '1 minute') as estimated_arrival,
            mr.route_name, mr.route_number, COALESCE(st.base_fare, 0) as fare,
            COALESCE(b.bus_type, 'Normal') as bus_type, mr.id::text as master_route_id
     FROM scheduled_trips st
     JOIN master_routes mr ON mr.id = st.master_route_id
+    LEFT JOIN trip_schedules ts ON ts.id = st.trip_schedule_id
     LEFT JOIN buses b ON b.id = st.bus_id
     WHERE st.master_route_id = mc.r2_id 
       AND st.departure_datetime >= l1.estimated_arrival + INTERVAL '15 minutes'
@@ -2148,6 +2172,7 @@ LIMIT $7;
 		DropLoungeName    string    `db:"drop_lounge_name"`
 		DropDistM         float64   `db:"drop_dist_m"`
 		L1TripID          string    `db:"l1_trip_id"`
+		L1ScheduleName    *string   `db:"l1_schedule_name"`
 		L1Dep             time.Time `db:"l1_dep"`
 		L1Arr             time.Time `db:"l1_arr"`
 		L1RouteName       string    `db:"l1_route_name"`
@@ -2158,6 +2183,7 @@ LIMIT $7;
 		L1Boarding        string    `db:"l1_boarding"`
 		L1Dropping        string    `db:"l1_dropping"`
 		L2TripID          string    `db:"l2_trip_id"`
+		L2ScheduleName    *string   `db:"l2_schedule_name"`
 		L2Dep             time.Time `db:"l2_dep"`
 		L2Arr             time.Time `db:"l2_arr"`
 		L2RouteName       string    `db:"l2_route_name"`
@@ -2183,6 +2209,7 @@ LIMIT $7;
 
 		leg1 := models.TripResult{
 			TripID:           l1ID,
+			ScheduleName:     row.L1ScheduleName,
 			RouteName:        row.L1RouteName,
 			RouteNumber:      row.L1RouteNumber,
 			DepartureTime:    row.L1Dep,
@@ -2196,6 +2223,7 @@ LIMIT $7;
 
 		leg2 := models.TripResult{
 			TripID:           l2ID,
+			ScheduleName:     row.L2ScheduleName,
 			RouteName:        row.L2RouteName,
 			RouteNumber:      row.L2RouteNumber,
 			DepartureTime:    row.L2Dep,
@@ -2211,6 +2239,7 @@ LIMIT $7;
 
 		results = append(results, models.TripResult{
 			TripID:           l1ID, // Use Leg 1 ID as the primary ID for the combined trip
+			ScheduleName:     row.L1ScheduleName,
 			IsTransit:        true,
 			TransitPointID:   &tLoungeID,
 			TransitPoint:     row.TransitLoungeName,

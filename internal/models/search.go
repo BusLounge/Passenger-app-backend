@@ -73,6 +73,7 @@ type RouteStop struct {
 // TripResult represents a single trip in search results
 type TripResult struct {
 	TripID           uuid.UUID `json:"trip_id" db:"trip_id"`
+	ScheduleName     *string   `json:"schedule_name,omitempty" db:"schedule_name"`
 	RouteName        string    `json:"route_name" db:"route_name"`
 	RouteNumber      *string   `json:"route_number" db:"route_number"`
 	ScheduleName     *string   `json:"schedule_name,omitempty" db:"schedule_name"`
