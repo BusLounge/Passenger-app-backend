@@ -76,7 +76,6 @@ type TripResult struct {
 	ScheduleName     *string   `json:"schedule_name,omitempty" db:"schedule_name"`
 	RouteName        string    `json:"route_name" db:"route_name"`
 	RouteNumber      *string   `json:"route_number" db:"route_number"`
-	ScheduleName     *string   `json:"schedule_name,omitempty" db:"schedule_name"`
 	BusType          string    `json:"bus_type" db:"bus_type"`
 	DepartureTime    time.Time `json:"-" db:"departure_time"`
 	EstimatedArrival time.Time `json:"-" db:"estimated_arrival"`
