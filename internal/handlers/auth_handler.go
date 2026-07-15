@@ -350,9 +350,21 @@ func (h *AuthHandler) VerifyOTP(c *gin.Context) {
 		return
 	}
 
+	// Ensure the user has the 'passenger' role
+	hasPassengerRole := h.userRepository.HasRole(user, "passenger")
+	if !hasPassengerRole {
+		err = h.userRepository.AddUserRole(user.ID, "passenger")
+		if err == nil {
+			user.Roles = append(user.Roles, "passenger")
+			hasPassengerRole = true
+		} else {
+			log.Printf("WARNING: Failed to add passenger role for user %s: %v", user.ID, err)
+		}
+	}
+
 	// For users with passenger role, ensure passenger record exists
 	// This creates the passenger profile record in the passengers table
-	if h.userRepository.HasRole(user, "passenger") {
+	if hasPassengerRole {
 		_, _, err := h.passengerRepository.GetOrCreatePassenger(user.ID)
 		if err != nil {
 			log.Printf("WARNING: Failed to create passenger record for user %s: %v", user.ID, err)
@@ -1048,9 +1060,17 @@ func (h *AuthHandler) CompleteBasicProfile(c *gin.Context) {
 		return
 	}
 
-	// Get user data for response
+	// Ensure the user has the 'passenger' role
 	user, err := h.userRepository.GetUserByID(userCtx.UserID)
-	if err != nil {
+	if err == nil {
+		hasPassengerRole := h.userRepository.HasRole(user, "passenger")
+		if !hasPassengerRole {
+			err = h.userRepository.AddUserRole(userCtx.UserID, "passenger")
+			if err == nil {
+				user.Roles = append(user.Roles, "passenger")
+			}
+		}
+	} else {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "profile_retrieval_failed",
 			Message: "Failed to retrieve user profile",
