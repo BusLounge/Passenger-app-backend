@@ -303,10 +303,11 @@ func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterB
 		return nil, err
 	}
 
-	// Get bus booking if exists
-	busBooking, err := r.GetBusBookingByBookingID(bookingID)
-	if err == nil {
-		booking.BusBooking = busBooking
+	// Get bus bookings if exists
+	busBookings, err := r.GetBusBookingsByBookingID(bookingID)
+	if err == nil && len(busBookings) > 0 {
+		booking.BusBooking = busBookings[0] // For backward compatibility
+		booking.BusBookings = busBookings
 	}
 
 	// Get lounge bookings if exists
@@ -357,10 +358,11 @@ func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.
 		return nil, err
 	}
 
-	// Get bus booking if exists
-	busBooking, err := r.GetBusBookingByBookingID(booking.ID)
-	if err == nil {
-		booking.BusBooking = busBooking
+	// Get bus bookings if exists
+	busBookings, err := r.GetBusBookingsByBookingID(booking.ID)
+	if err == nil && len(busBookings) > 0 {
+		booking.BusBooking = busBookings[0] // For backward compatibility
+		booking.BusBookings = busBookings
 	}
 
 	// Get lounge bookings if exists
@@ -716,6 +718,41 @@ func (r *AppBookingRepository) GetBusBookingByBookingID(bookingID string) (*mode
 	}
 
 	return busBooking, nil
+}
+
+// GetBusBookingsByBookingID retrieves all bus bookings by master booking ID
+func (r *AppBookingRepository) GetBusBookingsByBookingID(bookingID string) ([]*models.BusBooking, error) {
+	query := `
+		SELECT bb.id, bb.booking_id, bb.scheduled_trip_id,
+		       bb.boarding_stop_id, bb.alighting_stop_id,
+		       bb.number_of_seats, bb.fare_per_seat, bb.total_fare,
+		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
+		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
+		       bb.cancelled_at, bb.cancellation_reason,
+		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
+		       bb.created_at, bb.updated_at
+		FROM bus_bookings bb
+		WHERE bb.booking_id = $1
+		ORDER BY bb.created_at ASC`
+
+	var busBookings []*models.BusBooking
+	err := r.db.Select(&busBookings, query, bookingID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, bb := range busBookings {
+		// Get denormalized data via JOINs
+		r.populateBusBookingDetails(bb)
+
+		// Get seats
+		seats, err := r.GetSeatsByBusBookingID(bb.ID)
+		if err == nil {
+			bb.Seats = seats
+		}
+	}
+
+	return busBookings, nil
 }
 
 // GetBusBookingByQRCode retrieves bus booking by QR code

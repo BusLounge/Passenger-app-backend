@@ -170,6 +170,7 @@ type MasterBooking struct {
 
 	// Related data (not in DB, populated by queries)
 	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"`
+	BusBookings    []*BusBooking   `json:"bus_bookings,omitempty" db:"-"`
 	LoungeBookings []LoungeBooking `json:"lounge_bookings,omitempty" db:"-"`
 }
 

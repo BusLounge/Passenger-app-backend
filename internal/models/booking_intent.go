@@ -424,7 +424,7 @@ type BusIntentLegRequest struct {
 // BusIntentSeatRequest represents a seat in the request
 type BusIntentSeatRequest struct {
 	TripSeatID      string  `json:"trip_seat_id" binding:"required"`
-	SeatNumber      string  `json:"seat_number" binding:"required"`
+	SeatNumber      string  `json:"seat_number,omitempty"` // Optional: backend fetches from trip_seat lookup
 	PassengerName   string  `json:"passenger_name" binding:"required"`
 	PassengerPhone  *string `json:"passenger_phone,omitempty"`
 	PassengerGender *string `json:"passenger_gender,omitempty"`
@@ -478,21 +478,21 @@ func (r *CreateBookingIntentRequest) Validate() error {
 		if r.Bus == nil {
 			return errors.New("bus data is required for bus_only intent")
 		}
-		if r.PreTripLounge != nil || r.PostTripLounge != nil {
+		if r.PreTripLounge != nil || r.PostTripLounge != nil || r.TransitLounge != nil {
 			return errors.New("lounge data should not be present for bus_only intent")
 		}
 	case IntentTypeLoungeOnly:
 		if r.Bus != nil {
 			return errors.New("bus data should not be present for lounge_only intent")
 		}
-		if r.PreTripLounge == nil && r.PostTripLounge == nil {
+		if r.PreTripLounge == nil && r.PostTripLounge == nil && r.TransitLounge == nil {
 			return errors.New("at least one lounge booking is required for lounge_only intent")
 		}
 	case IntentTypeCombined:
 		if r.Bus == nil {
 			return errors.New("bus data is required for combined intent")
 		}
-		if r.PreTripLounge == nil && r.PostTripLounge == nil {
+		if r.PreTripLounge == nil && r.PostTripLounge == nil && r.TransitLounge == nil {
 			return errors.New("at least one lounge booking is required for combined intent")
 		}
 	default:
