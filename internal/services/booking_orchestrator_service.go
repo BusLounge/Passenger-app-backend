@@ -257,9 +257,18 @@ func (s *BookingOrchestratorService) processBusIntent(
 	}
 
 	// 3. Get seat IDs and check availability
-	seatIDs := make([]string, len(req.Seats))
-	for i, seat := range req.Seats {
-		seatIDs[i] = seat.TripSeatID
+	var seatIDs []string
+	if len(req.Legs) > 0 {
+		for _, leg := range req.Legs {
+			for _, seat := range leg.Seats {
+				seatIDs = append(seatIDs, seat.TripSeatID)
+			}
+		}
+	} else {
+		seatIDs = make([]string, len(req.Seats))
+		for i, seat := range req.Seats {
+			seatIDs[i] = seat.TripSeatID
+		}
 	}
 
 	available, unavailable, err := s.intentRepo.CheckSeatsAvailableForHold(seatIDs)
@@ -284,24 +293,60 @@ func (s *BookingOrchestratorService) processBusIntent(
 
 	// 5. Build payload with prices
 	var totalFare float64
-	intentSeats := make([]models.BusIntentSeat, len(req.Seats))
-	for i, reqSeat := range req.Seats {
-		seat, exists := seatMap[reqSeat.TripSeatID]
-		if !exists {
-			return nil, 0, fmt.Errorf("seat %s not found", reqSeat.TripSeatID)
-		}
+	var intentSeats []models.BusIntentSeat
+	var intentLegs []models.BusIntentLegPayload
 
-		intentSeats[i] = models.BusIntentSeat{
-			TripSeatID:      reqSeat.TripSeatID,
-			SeatNumber:      seat.SeatNumber,
-			SeatType:        seat.SeatType,
-			SeatPrice:       seat.SeatPrice,
-			PassengerName:   reqSeat.PassengerName,
-			PassengerPhone:  reqSeat.PassengerPhone,
-			PassengerGender: reqSeat.PassengerGender,
-			IsPrimary:       reqSeat.IsPrimary,
+	if len(req.Legs) > 0 {
+		for _, legReq := range req.Legs {
+			var legSeats []models.BusIntentSeat
+			for _, reqSeat := range legReq.Seats {
+				seat, exists := seatMap[reqSeat.TripSeatID]
+				if !exists {
+					return nil, 0, fmt.Errorf("seat %s not found", reqSeat.TripSeatID)
+				}
+				intentSeat := models.BusIntentSeat{
+					TripSeatID:      reqSeat.TripSeatID,
+					SeatNumber:      seat.SeatNumber,
+					SeatType:        seat.SeatType,
+					SeatPrice:       seat.SeatPrice,
+					PassengerName:   reqSeat.PassengerName,
+					PassengerPhone:  reqSeat.PassengerPhone,
+					PassengerGender: reqSeat.PassengerGender,
+					IsPrimary:       reqSeat.IsPrimary,
+				}
+				legSeats = append(legSeats, intentSeat)
+				intentSeats = append(intentSeats, intentSeat) // Also add to main seats array for backward compatibility
+				totalFare += seat.SeatPrice
+			}
+			intentLegs = append(intentLegs, models.BusIntentLegPayload{
+				ScheduledTripID:   legReq.ScheduledTripID,
+				BoardingStopID:    legReq.BoardingStopID,
+				BoardingStopName:  legReq.BoardingStopName,
+				AlightingStopID:   legReq.AlightingStopID,
+				AlightingStopName: legReq.AlightingStopName,
+				Seats:             legSeats,
+			})
 		}
-		totalFare += seat.SeatPrice
+	} else {
+		intentSeats = make([]models.BusIntentSeat, len(req.Seats))
+		for i, reqSeat := range req.Seats {
+			seat, exists := seatMap[reqSeat.TripSeatID]
+			if !exists {
+				return nil, 0, fmt.Errorf("seat %s not found", reqSeat.TripSeatID)
+			}
+
+			intentSeats[i] = models.BusIntentSeat{
+				TripSeatID:      reqSeat.TripSeatID,
+				SeatNumber:      seat.SeatNumber,
+				SeatType:        seat.SeatType,
+				SeatPrice:       seat.SeatPrice,
+				PassengerName:   reqSeat.PassengerName,
+				PassengerPhone:  reqSeat.PassengerPhone,
+				PassengerGender: reqSeat.PassengerGender,
+				IsPrimary:       reqSeat.IsPrimary,
+			}
+			totalFare += seat.SeatPrice
+		}
 	}
 
 	// 6. Get trip info for display
@@ -336,6 +381,7 @@ func (s *BookingOrchestratorService) processBusIntent(
 		SearchFromLounge:  req.SearchFromLounge,
 		SearchToLounge:    req.SearchToLounge,
 		TripInfo:          tripInfo,
+		Legs:              intentLegs,
 	}
 
 	return payload, totalFare, nil
@@ -899,38 +945,83 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 		SearchToLounge:       busIntent.SearchToLounge,
 	}
 
-	// Build bus booking
-	busBooking := &models.BusBooking{
-		ScheduledTripID: busIntent.ScheduledTripID,
-		BoardingStopID:  busIntent.BoardingStopID,
-		AlightingStopID: busIntent.AlightingStopID,
-		NumberOfSeats:   len(busIntent.Seats),
-		FarePerSeat:     intent.BusFare / float64(len(busIntent.Seats)),
-		TotalFare:       intent.BusFare,
-		Status:          models.BusBookingConfirmed,
-	}
-	if busIntent.SpecialRequests != nil {
-		busBooking.SpecialRequests = busIntent.SpecialRequests
-	}
+	// Build bus booking(s)
+	var busBookings []*models.BusBooking
+	var seatsList [][]models.BusBookingSeat
 
-	// Build seats
-	seats := make([]models.BusBookingSeat, len(busIntent.Seats))
-	for i, intentSeat := range busIntent.Seats {
-		seats[i] = models.BusBookingSeat{
-			TripSeatID:         &intentSeat.TripSeatID,
-			PassengerName:      intentSeat.PassengerName,
-			PassengerPhone:     intentSeat.PassengerPhone,
-			PassengerGender:    intentSeat.PassengerGender,
-			IsPrimaryPassenger: intentSeat.IsPrimary,
-			Status:             models.SeatBookingBooked,
-			SeatNumber:         intentSeat.SeatNumber,
-			SeatType:           intentSeat.SeatType,
-			SeatPrice:          intentSeat.SeatPrice,
+	if len(busIntent.Legs) > 0 {
+		for _, leg := range busIntent.Legs {
+			legBusBooking := &models.BusBooking{
+				ScheduledTripID: leg.ScheduledTripID,
+				BoardingStopID:  leg.BoardingStopID,
+				AlightingStopID: leg.AlightingStopID,
+				NumberOfSeats:   len(leg.Seats),
+				FarePerSeat:     0, // Will calculate below
+				Status:          models.BusBookingConfirmed,
+			}
+			if busIntent.SpecialRequests != nil {
+				legBusBooking.SpecialRequests = busIntent.SpecialRequests
+			}
+
+			var legTotalFare float64
+			legSeats := make([]models.BusBookingSeat, len(leg.Seats))
+			for i, intentSeat := range leg.Seats {
+				legSeats[i] = models.BusBookingSeat{
+					TripSeatID:         &intentSeat.TripSeatID,
+					PassengerName:      intentSeat.PassengerName,
+					PassengerPhone:     intentSeat.PassengerPhone,
+					PassengerGender:    intentSeat.PassengerGender,
+					IsPrimaryPassenger: intentSeat.IsPrimary,
+					Status:             models.SeatBookingBooked,
+					SeatNumber:         intentSeat.SeatNumber,
+					SeatType:           intentSeat.SeatType,
+					SeatPrice:          intentSeat.SeatPrice,
+				}
+				legTotalFare += intentSeat.SeatPrice
+			}
+			legBusBooking.TotalFare = legTotalFare
+			if len(leg.Seats) > 0 {
+				legBusBooking.FarePerSeat = legTotalFare / float64(len(leg.Seats))
+			}
+
+			busBookings = append(busBookings, legBusBooking)
+			seatsList = append(seatsList, legSeats)
 		}
+	} else {
+		busBooking := &models.BusBooking{
+			ScheduledTripID: busIntent.ScheduledTripID,
+			BoardingStopID:  busIntent.BoardingStopID,
+			AlightingStopID: busIntent.AlightingStopID,
+			NumberOfSeats:   len(busIntent.Seats),
+			FarePerSeat:     intent.BusFare / float64(len(busIntent.Seats)),
+			TotalFare:       intent.BusFare,
+			Status:          models.BusBookingConfirmed,
+		}
+		if busIntent.SpecialRequests != nil {
+			busBooking.SpecialRequests = busIntent.SpecialRequests
+		}
+
+		seats := make([]models.BusBookingSeat, len(busIntent.Seats))
+		for i, intentSeat := range busIntent.Seats {
+			seats[i] = models.BusBookingSeat{
+				TripSeatID:         &intentSeat.TripSeatID,
+				PassengerName:      intentSeat.PassengerName,
+				PassengerPhone:     intentSeat.PassengerPhone,
+				PassengerGender:    intentSeat.PassengerGender,
+				IsPrimaryPassenger: intentSeat.IsPrimary,
+				Status:             models.SeatBookingBooked,
+				SeatNumber:         intentSeat.SeatNumber,
+				SeatType:           intentSeat.SeatType,
+				SeatPrice:          intentSeat.SeatPrice,
+			}
+		}
+
+		busBookings = append(busBookings, busBooking)
+		seatsList = append(seatsList, seats)
 	}
 
 	// Create booking
-	response, err := s.appBookingRepo.CreateBooking(masterBooking, busBooking, seats, s.tripSeatRepo)
+	response, err := s.appBookingRepo.CreateBooking(masterBooking, busBookings, seatsList, s.tripSeatRepo)
 	if err != nil {
 		return nil, "", nil, err
 	}
