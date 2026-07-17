@@ -18,6 +18,7 @@ type LoungeBookingType string
 
 const (
 	LoungeBookingPreTrip    LoungeBookingType = "pre_trip"   // Before bus departure
+	LoungeBookingTransit    LoungeBookingType = "transit"    // Transit hub lounge visit
 	LoungeBookingPostTrip   LoungeBookingType = "post_trip"  // After bus arrival
 	LoungeBookingStandalone LoungeBookingType = "standalone" // Independent lounge visit
 )
@@ -525,10 +526,10 @@ func (r *CreateLoungeBookingRequest) Validate() error {
 	}
 
 	validBookingTypes := map[string]bool{
-		"pre_trip": true, "post_trip": true, "standalone": true,
+		"pre_trip": true, "post_trip": true, "standalone": true, "transit": true,
 	}
 	if !validBookingTypes[r.BookingType] {
-		return errors.New("invalid booking_type: must be pre_trip, post_trip, or standalone")
+		return errors.New("invalid booking_type: must be pre_trip, transit, post_trip, or standalone")
 	}
 
 	validPricingTypes := map[string]bool{
