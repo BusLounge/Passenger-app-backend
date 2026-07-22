@@ -1008,3 +1008,58 @@ func (r *LoungeBookingRepository) GetLoungePrice(loungeID uuid.UUID, pricingType
 	}
 	return price.String, nil
 }
+
+// GetLoungeRecommendationStats retrieves monthly statistics for a list of lounges
+func (r *LoungeBookingRepository) GetLoungeRecommendationStats(loungeIDs []uuid.UUID) (map[uuid.UUID]models.LoungeRecommendationStats, error) {
+	stats := make(map[uuid.UUID]models.LoungeRecommendationStats)
+	if len(loungeIDs) == 0 {
+		return stats, nil
+	}
+
+	query := `
+		SELECT 
+			lounge_id,
+			COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE)) as monthly_bookings,
+			COALESCE(SUM(number_of_guests) FILTER (
+				WHERE status IN ('pending', 'confirmed', 'checked_in') 
+				  AND scheduled_arrival <= NOW() + INTERVAL '2 hours' 
+				  AND (actual_departure IS NULL OR actual_departure > NOW())
+			), 0) as current_active_guests
+		FROM lounge_bookings
+		WHERE lounge_id = ANY($1)
+		GROUP BY lounge_id
+	`
+	
+	rows, err := r.db.Queryx(query, pq.Array(loungeIDs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get lounge recommendation stats: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var loungeID uuid.UUID
+		var monthlyBookings int
+		var currentActiveGuests int
+
+		if err := rows.Scan(&loungeID, &monthlyBookings, &currentActiveGuests); err != nil {
+			return nil, fmt.Errorf("failed to scan stats row: %w", err)
+		}
+		
+		stats[loungeID] = models.LoungeRecommendationStats{
+			MonthlyBookings:     monthlyBookings,
+			CurrentActiveGuests: currentActiveGuests,
+		}
+	}
+	
+	// Ensure all requested lounges have an entry (default 0)
+	for _, id := range loungeIDs {
+		if _, exists := stats[id]; !exists {
+			stats[id] = models.LoungeRecommendationStats{
+				MonthlyBookings:     0,
+				CurrentActiveGuests: 0,
+			}
+		}
+	}
+
+	return stats, nil
+}

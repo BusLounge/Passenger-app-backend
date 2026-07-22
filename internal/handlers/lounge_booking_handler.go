@@ -682,6 +682,33 @@ func (h *LoungeBookingHandler) DeleteProduct(c *gin.Context) {
 // LOUNGE BOOKINGS - PASSENGER ENDPOINTS
 // ============================================================================
 
+// GetLoungeRecommendationStats handles POST /api/v1/lounges/recommendation-stats
+func (h *LoungeBookingHandler) GetLoungeRecommendationStats(c *gin.Context) {
+	var req models.LoungeRecommendationStatsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "validation_error",
+			Message: "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	stats, err := h.bookingRepo.GetLoungeRecommendationStats(req.LoungeIDs)
+	if err != nil {
+		log.Printf("ERROR: Failed to get lounge recommendation stats: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "database_error",
+			Message: "Failed to retrieve statistics",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"stats": stats,
+	})
+}
+
+
 // CreateLoungeBooking handles POST /api/v1/lounge-bookings
 func (h *LoungeBookingHandler) CreateLoungeBooking(c *gin.Context) {
 	userCtx, exists := middleware.GetUserContext(c)
