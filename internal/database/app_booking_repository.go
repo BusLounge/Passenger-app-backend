@@ -191,16 +191,16 @@ func (r *AppBookingRepository) CreateBooking(
 			booking_id, scheduled_trip_id,
 			boarding_stop_id, alighting_stop_id,
 			number_of_seats, fare_per_seat, total_fare,
-			status, qr_code_data, qr_generated_at, special_requests
+			status, qr_code_data, qr_generated_at, special_requests, is_return
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 		) RETURNING id, created_at, updated_at`
 
 	err = tx.QueryRowx(busBookingQuery,
 		busBooking.BookingID, busBooking.ScheduledTripID,
 		nullableUUID(busBooking.BoardingStopID), nullableUUID(busBooking.AlightingStopID),
 		busBooking.NumberOfSeats, busBooking.FarePerSeat, busBooking.TotalFare,
-		busBooking.Status, busBooking.QRCodeData, busBooking.QRGeneratedAt, busBooking.SpecialRequests,
+		busBooking.Status, busBooking.QRCodeData, busBooking.QRGeneratedAt, busBooking.SpecialRequests, busBooking.IsReturn,
 	).Scan(&busBooking.ID, &busBooking.CreatedAt, &busBooking.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bus booking: %w", err)
