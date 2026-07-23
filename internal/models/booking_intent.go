@@ -140,6 +140,8 @@ type PricingSnapshot struct {
 	PreLoungeFare     float64             `json:"pre_lounge_fare"`
 	TransitLoungeFare float64             `json:"transit_lounge_fare"`
 	PostLoungeFare    float64             `json:"post_lounge_fare"`
+	ReturnPreLoungeFare  float64          `json:"return_pre_lounge_fare,omitempty"`
+	ReturnPostLoungeFare float64          `json:"return_post_lounge_fare,omitempty"`
 	TransportFare     float64             `json:"transport_fare,omitempty"`
 	Total             float64             `json:"total"`
 	Currency          string              `json:"currency"`
@@ -276,9 +278,12 @@ type BookingIntent struct {
 
 	// JSONB payloads (nullable in DB)
 	BusIntent            *BusIntentPayload    `json:"bus_intent,omitempty" db:"bus_intent"`
+	ReturnBusIntent      *BusIntentPayload    `json:"return_bus_intent,omitempty" db:"return_bus_intent"`
 	PreTripLoungeIntent  *LoungeIntentPayload `json:"pre_trip_lounge_intent,omitempty" db:"pre_trip_lounge_intent"`
 	TransitLoungeIntent  *LoungeIntentPayload `json:"transit_lounge_intent,omitempty" db:"transit_lounge_intent"`
 	PostTripLoungeIntent *LoungeIntentPayload `json:"post_trip_lounge_intent,omitempty" db:"post_trip_lounge_intent"`
+	ReturnPreTripLoungeIntent  *LoungeIntentPayload `json:"return_pre_trip_lounge_intent,omitempty" db:"return_pre_trip_lounge_intent"`
+	ReturnPostTripLoungeIntent *LoungeIntentPayload `json:"return_post_trip_lounge_intent,omitempty" db:"return_post_trip_lounge_intent"`
 	TransportIntents     TransportIntentPayloads `json:"transport_intents,omitempty" db:"transport_intents"`
 
 	// Pricing (server-calculated, stored at intent time)
@@ -286,6 +291,8 @@ type BookingIntent struct {
 	PreLoungeFare     float64         `json:"pre_lounge_fare" db:"pre_lounge_fare"`
 	TransitLoungeFare float64         `json:"transit_lounge_fare" db:"transit_lounge_fare"`
 	PostLoungeFare    float64         `json:"post_lounge_fare" db:"post_lounge_fare"`
+	ReturnPreLoungeFare float64     `json:"return_pre_lounge_fare,omitempty" db:"-"`
+	ReturnPostLoungeFare float64    `json:"return_post_lounge_fare,omitempty" db:"-"`
 	TotalAmount       float64         `json:"total_amount" db:"total_amount"`
 	Currency          string          `json:"currency" db:"currency"`
 	PricingSnapshot   PricingSnapshot `json:"pricing_snapshot" db:"pricing_snapshot"`
@@ -303,9 +310,12 @@ type BookingIntent struct {
 
 	// Result references (filled AFTER confirmation)
 	BusBookingID           *uuid.UUID `json:"bus_booking_id,omitempty" db:"bus_booking_id"`
+	ReturnBusBookingID     *uuid.UUID `json:"return_bus_booking_id,omitempty" db:"return_bus_booking_id"`
 	PreLoungeBookingID     *uuid.UUID `json:"pre_lounge_booking_id,omitempty" db:"pre_lounge_booking_id"`
 	TransitLoungeBookingID *uuid.UUID `json:"transit_lounge_booking_id,omitempty" db:"transit_lounge_booking_id"`
 	PostLoungeBookingID    *uuid.UUID `json:"post_lounge_booking_id,omitempty" db:"post_lounge_booking_id"`
+	ReturnPreLoungeBookingID  *uuid.UUID `json:"return_pre_lounge_booking_id,omitempty" db:"return_pre_lounge_booking_id"`
+	ReturnPostLoungeBookingID *uuid.UUID `json:"return_post_lounge_booking_id,omitempty" db:"return_post_lounge_booking_id"`
 	TransportBookingIDs    []uuid.UUID `json:"transport_booking_ids,omitempty" db:"-"`
 
 	// TTL Management
@@ -366,11 +376,16 @@ type CreateBookingIntentRequest struct {
 
 	// Bus booking data (required for bus_only and combined)
 	Bus *BusIntentRequest `json:"bus,omitempty"`
+	
+	// Optional return bus for round-trips
+	ReturnBus *BusIntentRequest `json:"return_bus,omitempty"`
 
 	// Lounge booking data (optional)
 	PreTripLounge  *LoungeIntentRequest `json:"pre_trip_lounge,omitempty"`
 	TransitLounge  *LoungeIntentRequest `json:"transit_lounge,omitempty"`
 	PostTripLounge *LoungeIntentRequest `json:"post_trip_lounge,omitempty"`
+	ReturnPreTripLounge  *LoungeIntentRequest `json:"return_pre_trip_lounge,omitempty"`
+	ReturnPostTripLounge *LoungeIntentRequest `json:"return_post_trip_lounge,omitempty"`
 
 	// Transport booking data (optional)
 	Transports []TransportIntentRequest `json:"transports,omitempty"`
@@ -532,6 +547,8 @@ type PriceBreakdown struct {
 	PreLoungeFare     float64 `json:"pre_lounge_fare"`
 	TransitLoungeFare float64 `json:"transit_lounge_fare"`
 	PostLoungeFare    float64 `json:"post_lounge_fare"`
+	ReturnPreLoungeFare float64 `json:"return_pre_lounge_fare,omitempty"`
+	ReturnPostLoungeFare float64 `json:"return_post_lounge_fare,omitempty"`
 	Total             float64 `json:"total"`
 	Currency          string  `json:"currency"`
 }
@@ -558,9 +575,12 @@ type ConfirmBookingResponse struct {
 	MasterReference string `json:"master_reference"` // Overall booking reference
 
 	BusBooking           *ConfirmedBusBooking    `json:"bus_booking,omitempty"`
+	ReturnBusBooking     *ConfirmedBusBooking    `json:"return_bus_booking,omitempty"`
 	PreLoungeBooking     *ConfirmedLoungeBooking `json:"pre_lounge_booking,omitempty"`
 	TransitLoungeBooking *ConfirmedLoungeBooking `json:"transit_lounge_booking,omitempty"`
 	PostLoungeBooking    *ConfirmedLoungeBooking `json:"post_lounge_booking,omitempty"`
+	ReturnPreLoungeBooking     *ConfirmedLoungeBooking `json:"return_pre_lounge_booking,omitempty"`
+	ReturnPostLoungeBooking    *ConfirmedLoungeBooking `json:"return_post_lounge_booking,omitempty"`
 
 	TotalPaid float64 `json:"total_paid"`
 	Currency  string  `json:"currency"`
@@ -572,6 +592,7 @@ type ConfirmedBusBooking struct {
 	Reference   string    `json:"reference"`
 	QRCode      string    `json:"qr_code"`      // Base64 encoded QR or QR data string
 	TotalAmount float64   `json:"total_amount"` // Total fare for this bus booking
+	IsReturn    bool      `json:"is_return"`
 }
 
 // ConfirmedLoungeBooking represents the confirmed lounge booking details
