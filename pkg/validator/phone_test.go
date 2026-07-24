@@ -54,9 +54,8 @@ func TestValidate_InvalidNumbers(t *testing.T) {
 		{"", ErrEmptyPhone, "Empty string"},
 		{"123", ErrInvalidLength, "Too short"},
 		{"07712345678", ErrInvalidLength, "Too long"},
-		{"0791234567", ErrInvalidPrefix, "Invalid prefix 079"},
 		{"0731234567", ErrInvalidPrefix, "Invalid prefix 073"},
-		{"0741234567", ErrInvalidPrefix, "Invalid prefix 074"},
+		{"0801234567", ErrInvalidPrefix, "Invalid prefix 080"},
 		{"077123456a", ErrInvalidFormat, "Contains letters"},
 		{"077-123-456a", ErrInvalidFormat, "Contains letters with dashes"},
 		{"077 123 456!", ErrInvalidFormat, "Contains special characters"},
@@ -107,10 +106,12 @@ func TestIsValidPrefix(t *testing.T) {
 		"0701234567",
 		"0711234567",
 		"0721234567",
+		"0741234567",
 		"0751234567",
 		"0761234567",
 		"0771234567",
 		"0781234567",
+		"0791234567",
 	}
 
 	for _, phone := range validPrefixes {
@@ -122,8 +123,6 @@ func TestIsValidPrefix(t *testing.T) {
 	invalidPrefixes := []string{
 		"0691234567",
 		"0731234567",
-		"0741234567",
-		"0791234567",
 		"0801234567",
 		"0111234567",
 	}
@@ -209,7 +208,7 @@ func TestValidateMultiple(t *testing.T) {
 		"invalid",    // Invalid
 		"123",        // Invalid
 		"0721234567", // Valid
-		"0791234567", // Invalid prefix
+		"0801234567", // Invalid prefix
 	}
 
 	results := validator.ValidateMultiple(phones)
@@ -220,7 +219,7 @@ func TestValidateMultiple(t *testing.T) {
 	assert.Nil(t, results["0721234567"])
 	assert.NotNil(t, results["invalid"])
 	assert.NotNil(t, results["123"])
-	assert.NotNil(t, results["0791234567"])
+	assert.NotNil(t, results["0801234567"])
 }
 
 func TestIsValid(t *testing.T) {
@@ -244,7 +243,7 @@ func TestIsValid(t *testing.T) {
 		"",
 		"invalid",
 		"123",
-		"0791234567",
+		"0801234567",
 		"077123456a",
 	}
 

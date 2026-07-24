@@ -472,9 +472,17 @@ func (r *UserRepository) AddUserRole(id uuid.UUID, role string) error {
 		  AND NOT ($1 = ANY(roles))
 	`
 
-	_, err := r.db.Exec(query, role, time.Now(), id)
+	res, err := r.db.Exec(query, role, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("failed to add user role: %w", err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("user not found")
 	}
 
 	return nil
@@ -489,9 +497,17 @@ func (r *UserRepository) RemoveUserRole(id uuid.UUID, role string) error {
 		WHERE id = $3
 	`
 
-	_, err := r.db.Exec(query, role, time.Now(), id)
+	res, err := r.db.Exec(query, role, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("failed to remove user role: %w", err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("user not found")
 	}
 
 	return nil
