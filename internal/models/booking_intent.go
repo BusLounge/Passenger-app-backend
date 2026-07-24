@@ -69,6 +69,17 @@ type BusIntentPayload struct {
 	SearchFromLounge  *string            `json:"search_from_lounge,omitempty"`
 	SearchToLounge    *string            `json:"search_to_lounge,omitempty"`
 	TripInfo          *BusIntentTripInfo `json:"trip_info,omitempty"` // Denormalized for display
+	Legs              []BusIntentLegPayload `json:"legs,omitempty"`
+}
+
+// BusIntentLegPayload stores leg details for a transit bus booking intent
+type BusIntentLegPayload struct {
+	ScheduledTripID   string             `json:"scheduled_trip_id"`
+	BoardingStopID    *string            `json:"boarding_stop_id,omitempty"`
+	BoardingStopName  string             `json:"boarding_stop_name"`
+	AlightingStopID   *string            `json:"alighting_stop_id,omitempty"`
+	AlightingStopName string             `json:"alighting_stop_name"`
+	Seats             []BusIntentSeat    `json:"seats"`
 }
 
 // BusIntentSeat represents a seat selection in bus intent
@@ -412,12 +423,23 @@ type BusIntentRequest struct {
 	SpecialRequests   *string                `json:"special_requests,omitempty"`
 	SearchFromLounge  *string                `json:"search_from_lounge,omitempty"`
 	SearchToLounge    *string                `json:"search_to_lounge,omitempty"`
+	Legs              []BusIntentLegRequest  `json:"legs,omitempty"`
+}
+
+// BusIntentLegRequest represents a leg in a transit bus booking request
+type BusIntentLegRequest struct {
+	ScheduledTripID   string                 `json:"scheduled_trip_id" binding:"required"`
+	BoardingStopID    *string                `json:"boarding_stop_id,omitempty"`
+	BoardingStopName  string                 `json:"boarding_stop_name" binding:"required"`
+	AlightingStopID   *string                `json:"alighting_stop_id,omitempty"`
+	AlightingStopName string                 `json:"alighting_stop_name" binding:"required"`
+	Seats             []BusIntentSeatRequest `json:"seats" binding:"required,min=1"`
 }
 
 // BusIntentSeatRequest represents a seat in the request
 type BusIntentSeatRequest struct {
 	TripSeatID      string  `json:"trip_seat_id" binding:"required"`
-	SeatNumber      string  `json:"seat_number" binding:"required"`
+	SeatNumber      string  `json:"seat_number,omitempty"` // Optional: backend fetches from trip_seat lookup
 	PassengerName   string  `json:"passenger_name" binding:"required"`
 	PassengerPhone  *string `json:"passenger_phone,omitempty"`
 	PassengerGender *string `json:"passenger_gender,omitempty"`
@@ -471,21 +493,21 @@ func (r *CreateBookingIntentRequest) Validate() error {
 		if r.Bus == nil {
 			return errors.New("bus data is required for bus_only intent")
 		}
-		if r.PreTripLounge != nil || r.PostTripLounge != nil {
+		if r.PreTripLounge != nil || r.PostTripLounge != nil || r.TransitLounge != nil {
 			return errors.New("lounge data should not be present for bus_only intent")
 		}
 	case IntentTypeLoungeOnly:
 		if r.Bus != nil {
 			return errors.New("bus data should not be present for lounge_only intent")
 		}
-		if r.PreTripLounge == nil && r.PostTripLounge == nil {
+		if r.PreTripLounge == nil && r.PostTripLounge == nil && r.TransitLounge == nil {
 			return errors.New("at least one lounge booking is required for lounge_only intent")
 		}
 	case IntentTypeCombined:
 		if r.Bus == nil {
 			return errors.New("bus data is required for combined intent")
 		}
-		if r.PreTripLounge == nil && r.PostTripLounge == nil {
+		if r.PreTripLounge == nil && r.PostTripLounge == nil && r.TransitLounge == nil {
 			return errors.New("at least one lounge booking is required for combined intent")
 		}
 	default:

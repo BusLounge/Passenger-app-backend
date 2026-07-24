@@ -170,6 +170,7 @@ type MasterBooking struct {
 
 	// Related data (not in DB, populated by queries)
 	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"`
+	BusBookings    []*BusBooking   `json:"bus_bookings,omitempty" db:"-"`
 	LoungeBookings []LoungeBooking `json:"lounge_bookings,omitempty" db:"-"`
 }
 
@@ -357,9 +358,10 @@ type CancelAppBookingRequest struct {
 
 // BookingResponse is the response after creating a booking
 type BookingResponse struct {
-	Booking    *MasterBooking   `json:"booking"`
-	BusBooking *BusBooking      `json:"bus_booking,omitempty"`
-	Seats      []BusBookingSeat `json:"seats,omitempty"`
+	Booking     *MasterBooking     `json:"booking"`
+	BusBooking  *BusBooking        `json:"bus_booking,omitempty"` // For backward compatibility
+	BusBookings []*BusBooking      `json:"bus_bookings,omitempty"`
+	Seats       []BusBookingSeat   `json:"seats,omitempty"`
 	QRCode     string           `json:"qr_code,omitempty"`
 }
 

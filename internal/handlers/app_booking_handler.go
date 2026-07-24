@@ -197,7 +197,7 @@ func (h *AppBookingHandler) CreateBooking(c *gin.Context) {
 	}
 
 	// Create booking
-	response, err := h.bookingRepo.CreateBooking(booking, busBooking, seats, h.tripSeatRepo)
+	response, err := h.bookingRepo.CreateBooking(booking, []*models.BusBooking{busBooking}, [][]models.BusBookingSeat{seats}, h.tripSeatRepo)
 	if err != nil {
 		fmt.Printf("Error creating booking: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create booking", "details": err.Error()})

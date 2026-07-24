@@ -568,7 +568,7 @@ func (r *SearchRepository) FindDirectTrips(
 		LEFT JOIN master_routes mr_permit ON rp.master_route_id = mr_permit.id
 		LEFT JOIN buses b ON rp.bus_registration_number = b.license_plate
 		-- Join seat layout template to get total_seats
-		LEFT JOIN bus_seat_layout_templates bslt ON b.seat_layout_id = bslt.id
+		LEFT JOIN bus_seat_layout_templates bslt ON st.seat_layout_id = bslt.id
 		-- Get stop information
 		JOIN master_route_stops from_stop ON from_stop.id = $1
 		JOIN master_route_stops to_stop ON to_stop.id = $2
@@ -1269,7 +1269,7 @@ JOIN LATERAL (
     LEFT JOIN trip_schedules ts             ON ts.id  = st.trip_schedule_id
     LEFT JOIN route_permits rp              ON rp.id  = st.permit_id
     LEFT JOIN buses b                       ON b.license_plate = rp.bus_registration_number
-    LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
+    LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = st.seat_layout_id
     WHERE COALESCE(bor.master_route_id, rp.master_route_id) = mr_data.master_route_id
       AND st.is_bookable = true
       AND st.status IN ('scheduled', 'confirmed')
@@ -1544,7 +1544,7 @@ direct_results AS (
         LEFT JOIN trip_schedules ts    ON ts.id  = st.trip_schedule_id
         LEFT JOIN route_permits rp     ON rp.id  = st.permit_id
         LEFT JOIN buses b              ON b.license_plate = rp.bus_registration_number
-        LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
+        LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = st.seat_layout_id
         WHERE COALESCE(bor.master_route_id,rp.master_route_id) = dp.route_id
           AND st.is_bookable = true AND st.status IN ('scheduled','confirmed')
           AND st.departure_datetime > ($6 AT TIME ZONE 'Asia/Colombo')
@@ -1599,7 +1599,7 @@ transit_results AS (
         LEFT JOIN trip_schedules ts    ON ts.id  = st.trip_schedule_id
         LEFT JOIN route_permits rp     ON rp.id  = st.permit_id
         LEFT JOIN buses b              ON b.license_plate = rp.bus_registration_number
-        LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
+        LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = st.seat_layout_id
         WHERE COALESCE(bor.master_route_id,rp.master_route_id) = tc.r1_id
           AND st.is_bookable = true AND st.status IN ('scheduled','confirmed')
           AND st.departure_datetime > ($6 AT TIME ZONE 'Asia/Colombo')
@@ -1942,7 +1942,7 @@ JOIN LATERAL (
     LEFT JOIN trip_schedules ts             ON ts.id  = st.trip_schedule_id
     LEFT JOIN route_permits rp              ON rp.id  = st.permit_id
     LEFT JOIN buses b                       ON b.license_plate = rp.bus_registration_number
-    LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = b.seat_layout_id
+    LEFT JOIN bus_seat_layout_templates bslt ON bslt.id = st.seat_layout_id
     WHERE COALESCE(bor.master_route_id, rp.master_route_id) = mr_data.master_route_id
       AND st.is_bookable = true
       AND st.status IN ('scheduled', 'confirmed')
