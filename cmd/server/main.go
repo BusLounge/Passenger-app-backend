@@ -595,6 +595,8 @@ func main() {
 			lounges.GET("/near-stop/:routeId/:stopId", loungeHandler.GetLoungesNearStop)
 			// Using the 'near-stop' pattern to bypass Choreo gateway restrictions
 			lounges.GET("/near-stop/discovery/:id", loungeBookingHandler.GetLoungeTransportOptions)
+			logger.Info("  ✅ POST /api/v1/lounges/recommendation-stats (public)")
+			lounges.POST("/recommendation-stats", loungeBookingHandler.GetLoungeRecommendationStats)
 
 			// Protected routes (require JWT authentication)
 			loungesProtected := lounges.Group("")
