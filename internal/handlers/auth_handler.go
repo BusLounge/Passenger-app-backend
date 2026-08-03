@@ -391,7 +391,7 @@ func (h *AuthHandler) VerifyOTP(c *gin.Context) {
 	}
 
 	// Store refresh token in database
-	expiresAt := time.Now().Add(7 * 24 * time.Hour) // 7 days
+	expiresAt := time.Now().Add(h.config.JWT.RefreshTokenExpiry)
 
 	// Get device info from request if provided
 	deviceID := c.GetHeader("X-Device-ID")
@@ -442,7 +442,7 @@ func (h *AuthHandler) VerifyOTP(c *gin.Context) {
 		Message:         "OTP verified successfully",
 		AccessToken:     accessToken,
 		RefreshToken:    refreshToken,
-		ExpiresIn:       3600, // 1 hour
+		ExpiresIn:       int(h.config.JWT.AccessTokenExpiry.Seconds()),
 		IsNewUser:       isNew,
 		ProfileComplete: profileCompleted, // Use passenger table's profile_completed
 		Roles:           user.Roles,       // Include user roles in response
@@ -606,7 +606,7 @@ func (h *AuthHandler) VerifyOTPStaff(c *gin.Context) {
 	}
 
 	// Store refresh token in database
-	expiresAt := time.Now().Add(7 * 24 * time.Hour) // 7 days
+	expiresAt := time.Now().Add(h.config.JWT.RefreshTokenExpiry)
 
 	// Get device info from request if provided
 	deviceID := c.GetHeader("X-Device-ID")
@@ -657,7 +657,7 @@ func (h *AuthHandler) VerifyOTPStaff(c *gin.Context) {
 		Message:         "OTP verified successfully",
 		AccessToken:     accessToken,
 		RefreshToken:    refreshToken,
-		ExpiresIn:       3600, // 1 hour
+		ExpiresIn:       int(h.config.JWT.AccessTokenExpiry.Seconds()),
 		IsNewUser:       isNew,
 		ProfileComplete: user.ProfileCompleted,
 		Roles:           user.Roles, // Include user roles - empty [] for new users, ["driver"]/["conductor"] for existing staff
@@ -860,7 +860,7 @@ func (h *AuthHandler) VerifyOTPLoungeOwner(c *gin.Context, loungeOwnerRepo *data
 	}
 
 	// Store refresh token in database
-	expiresAt := time.Now().Add(7 * 24 * time.Hour) // 7 days
+	expiresAt := time.Now().Add(h.config.JWT.RefreshTokenExpiry)
 
 	// Get device info from request if provided
 	deviceID := c.GetHeader("X-Device-ID")
@@ -911,7 +911,7 @@ func (h *AuthHandler) VerifyOTPLoungeOwner(c *gin.Context, loungeOwnerRepo *data
 		Message:          "OTP verified successfully",
 		AccessToken:      accessToken,
 		RefreshToken:     refreshToken,
-		ExpiresIn:        3600, // 1 hour
+		ExpiresIn:        int(h.config.JWT.AccessTokenExpiry.Seconds()),
 		IsNewUser:        isNew,
 		ProfileComplete:  user.ProfileCompleted,
 		Roles:            user.Roles,       // Include user roles including 'lounge_owner'
@@ -1449,10 +1449,10 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	log.Printf("✅ REFRESH TOKEN: Token validated successfully for user: %s, phone: %s",
 		claims.UserID, claims.Phone)
 
-	// Check if token is revoked in database
-	revoked, err := h.refreshTokenRepository.IsTokenRevoked(req.RefreshToken)
+	// Fetch token data from database to check revocation and device binding
+	tokenData, err := h.refreshTokenRepository.GetRefreshToken(req.RefreshToken)
 	if err != nil {
-		log.Printf("❌ REFRESH TOKEN ERROR: Failed to check if token is revoked - %v", err)
+		log.Printf("❌ REFRESH TOKEN ERROR: Failed to get refresh token data - %v", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "token_check_failed",
 			Message: "Failed to verify token status",
@@ -1460,11 +1460,36 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	if revoked {
+	if tokenData == nil {
+		log.Printf("❌ REFRESH TOKEN ERROR: Token not found in database for user: %s", claims.UserID)
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "invalid_token",
+			Message: "Invalid or expired refresh token",
+		})
+		return
+	}
+
+	if tokenData.Revoked {
 		log.Printf("❌ REFRESH TOKEN ERROR: Token has been revoked for user: %s", claims.UserID)
+		// SECURITY BREACH DETECTED: Immediately invalidate ALL active refresh tokens for that user_id
+		h.refreshTokenRepository.RevokeAllUserTokens(claims.UserID)
+		
 		c.JSON(http.StatusUnauthorized, ErrorResponse{
 			Error:   "token_revoked",
-			Message: "Refresh token has been revoked",
+			Message: "Security breach detected. All sessions invalidated. Please login again.",
+		})
+		return
+	}
+
+	// Bind tokens to device_id sent in request headers to prevent cross-device session hijacking
+	if tokenData.DeviceID.Valid && tokenData.DeviceID.String != "" && req.DeviceID != "" && tokenData.DeviceID.String != req.DeviceID {
+		log.Printf("❌ REFRESH TOKEN ERROR: Device ID mismatch. Stored: %s, Request: %s", tokenData.DeviceID.String, req.DeviceID)
+		// Potential theft or cross-device attack
+		h.refreshTokenRepository.RevokeAllUserTokens(claims.UserID)
+		
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "device_mismatch",
+			Message: "Device mismatch detected. All sessions invalidated. Please login again.",
 		})
 		return
 	}
@@ -1537,7 +1562,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	// Store new refresh token in database BEFORE revoking old one
 	clientIP := utils.GetRealIP(c)
 	userAgent := utils.GetUserAgent(c)
-	expiresAt := time.Now().Add(7 * 24 * time.Hour) // 7 days
+	expiresAt := time.Now().Add(h.config.JWT.RefreshTokenExpiry)
 
 	err = h.refreshTokenRepository.StoreRefreshToken(
 		user.ID,
@@ -1574,7 +1599,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, RefreshTokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
-		ExpiresIn:    3600, // 1 hour
+		ExpiresIn:    int(h.config.JWT.AccessTokenExpiry.Seconds()),
 		TokenType:    "Bearer",
 	})
 }

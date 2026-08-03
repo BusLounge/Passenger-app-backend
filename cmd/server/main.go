@@ -201,6 +201,10 @@ func main() {
 		cfg,
 	)
 
+	// Initialize Wallet system
+	walletRepo := database.NewWalletRepository(sqlxDB.DB)
+	walletHandler := handlers.NewWalletHandler(walletRepo, userRepository, smsGateway)
+
 	// Initialize staff handler
 	staffHandler := handlers.NewStaffHandler(staffService, userRepository, staffRepository, scheduledTripRepo)
 
@@ -494,6 +498,14 @@ func main() {
 			user.GET("/profile", authHandler.GetProfile)
 			user.PUT("/profile", authHandler.UpdateProfile)
 			user.POST("/complete-basic-profile", authHandler.CompleteBasicProfile) // Simple first_name + last_name for passengers
+		}
+
+		// Wallet routes
+		wallet := v1.Group("/wallet")
+		wallet.Use(middleware.AuthMiddleware(jwtService))
+		{
+			wallet.GET("", walletHandler.GetWallet)
+			wallet.POST("/topup/confirm", walletHandler.ConfirmTopUp)
 		}
 
 		// Staff routes
