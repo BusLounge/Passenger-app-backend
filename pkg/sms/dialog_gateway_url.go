@@ -55,8 +55,16 @@ func (d *DialogURLGateway) SendOTP(phone, otpCode, appType string) (int64, error
 	}
 
 	// Create the message with the specific app hash for Android SMS auto-read
-	// Create the message WITHOUT the app hash so that Android User Consent API works reliably
-	message := fmt.Sprintf("Your SmartTransit OTP is: %s\n\nPlease use the above OTP to complete your action.\n\nRegards,\nSmartTransit", otpCode)
+	// Create the message with the specific app hash for Android SMS auto-read
+	var message string
+	if appHash != "" {
+		message = fmt.Sprintf("<#> Your SmartTransit OTP is: %s\n\nPlease use the above OTP to complete your action.\n\nRegards,\nSmartTransit\n%s",
+			otpCode,
+			appHash)
+	} else {
+		message = fmt.Sprintf("Your SmartTransit OTP is: %s\n\nPlease use the above OTP to complete your action.\n\nRegards,\nSmartTransit",
+			otpCode)
+	}
 
 	fmt.Printf("📱 Using app hash: %s (Type: %s)\n", appHash, appType)
 	fmt.Printf("💬 Message: %s\n", message)
