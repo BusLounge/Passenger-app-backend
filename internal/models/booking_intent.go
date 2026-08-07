@@ -69,6 +69,7 @@ type BusIntentPayload struct {
 	SearchFromLounge  *string            `json:"search_from_lounge,omitempty"`
 	SearchToLounge    *string            `json:"search_to_lounge,omitempty"`
 	TripInfo          *BusIntentTripInfo `json:"trip_info,omitempty"` // Denormalized for display
+<<<<<<< HEAD
 	Legs              []BusIntentLegPayload `json:"legs,omitempty"`
 }
 
@@ -80,6 +81,9 @@ type BusIntentLegPayload struct {
 	AlightingStopID   *string            `json:"alighting_stop_id,omitempty"`
 	AlightingStopName string             `json:"alighting_stop_name"`
 	Seats             []BusIntentSeat    `json:"seats"`
+=======
+	ReturnTrip        *BusIntentPayload  `json:"return_trip,omitempty"` // Added for round trip
+>>>>>>> 148d0ed (round trip backend implementation)
 }
 
 // BusIntentSeat represents a seat selection in bus intent
@@ -125,6 +129,9 @@ type LoungeIntentPayload struct {
 	TransportPickupLocationID *string  `json:"transport_pickup_location_id,omitempty"`
 	TransportCost             *string  `json:"transport_cost,omitempty"`
 	TransportTime             *string  `json:"transport_time,omitempty"`
+
+	// Return lounge nested to avoid booking_intents table changes
+	ReturnLounge *LoungeIntentPayload `json:"return_lounge,omitempty"`
 }
 
 // LoungeIntentGuest represents a guest in lounge intent
@@ -147,6 +154,7 @@ type LoungeIntentPreOrder struct {
 
 // PricingSnapshot stores server-calculated prices at intent creation
 type PricingSnapshot struct {
+<<<<<<< HEAD
 	BusFare           float64             `json:"bus_fare"`
 	PreLoungeFare     float64             `json:"pre_lounge_fare"`
 	TransitLoungeFare float64             `json:"transit_lounge_fare"`
@@ -155,6 +163,17 @@ type PricingSnapshot struct {
 	ReturnPostLoungeFare float64          `json:"return_post_lounge_fare,omitempty"`
 	TransportFare     float64             `json:"transport_fare,omitempty"`
 	Total             float64             `json:"total"`
+=======
+	BusFare               float64             `json:"bus_fare"`
+	ReturnBusFare         float64             `json:"return_bus_fare,omitempty"`
+	PreLoungeFare         float64             `json:"pre_lounge_fare"`
+	ReturnPreLoungeFare   float64             `json:"return_pre_lounge_fare,omitempty"`
+	TransitLoungeFare     float64             `json:"transit_lounge_fare"`
+	PostLoungeFare        float64             `json:"post_lounge_fare"`
+	ReturnPostLoungeFare  float64             `json:"return_post_lounge_fare,omitempty"`
+	TransportFare         float64             `json:"transport_fare,omitempty"`
+	Total                 float64             `json:"total"`
+>>>>>>> 148d0ed (round trip backend implementation)
 	Currency          string              `json:"currency"`
 	CalculatedAt      time.Time           `json:"calculated_at"`
 	SeatPrices        map[string]float64  `json:"seat_prices,omitempty"` // seat_id -> price
@@ -386,6 +405,7 @@ type CreateBookingIntentRequest struct {
 	IntentType BookingIntentType `json:"intent_type" binding:"required"`
 
 	// Bus booking data (required for bus_only and combined)
+<<<<<<< HEAD
 	Bus *BusIntentRequest `json:"bus,omitempty"`
 	
 	// Optional return bus for round-trips
@@ -395,6 +415,15 @@ type CreateBookingIntentRequest struct {
 	PreTripLounge  *LoungeIntentRequest `json:"pre_trip_lounge,omitempty"`
 	TransitLounge  *LoungeIntentRequest `json:"transit_lounge,omitempty"`
 	PostTripLounge *LoungeIntentRequest `json:"post_trip_lounge,omitempty"`
+=======
+	Bus       *BusIntentRequest `json:"bus,omitempty"`
+	ReturnBus *BusIntentRequest `json:"return_bus,omitempty"`
+
+	// Lounge booking data (optional)
+	PreTripLounge        *LoungeIntentRequest `json:"pre_trip_lounge,omitempty"`
+	TransitLounge        *LoungeIntentRequest `json:"transit_lounge,omitempty"`
+	PostTripLounge       *LoungeIntentRequest `json:"post_trip_lounge,omitempty"`
+>>>>>>> 148d0ed (round trip backend implementation)
 	ReturnPreTripLounge  *LoungeIntentRequest `json:"return_pre_trip_lounge,omitempty"`
 	ReturnPostTripLounge *LoungeIntentRequest `json:"return_post_trip_lounge,omitempty"`
 
@@ -539,6 +568,26 @@ func (r *CreateBookingIntentRequest) Validate() error {
 		}
 	}
 
+	// Validate return bus seats
+	if r.ReturnBus != nil {
+		if len(r.ReturnBus.Seats) == 0 {
+			return errors.New("at least one seat must be selected for return trip")
+		}
+		if len(r.ReturnBus.Seats) > 10 {
+			return errors.New("maximum 10 seats can be booked at once for return trip")
+		}
+		hasPrimary := false
+		for _, seat := range r.ReturnBus.Seats {
+			if seat.IsPrimary {
+				hasPrimary = true
+				break
+			}
+		}
+		if !hasPrimary {
+			r.ReturnBus.Seats[0].IsPrimary = true
+		}
+	}
+
 	// Validate lounge guests
 	if r.PreTripLounge != nil && len(r.PreTripLounge.Guests) == 0 {
 		return errors.New("at least one guest is required for pre-trip lounge")
@@ -566,6 +615,7 @@ type BookingIntentResponse struct {
 // PriceBreakdown shows pricing details
 type PriceBreakdown struct {
 	BusFare           float64 `json:"bus_fare"`
+	ReturnBusFare     float64 `json:"return_bus_fare,omitempty"`
 	PreLoungeFare     float64 `json:"pre_lounge_fare"`
 	TransitLoungeFare float64 `json:"transit_lounge_fare"`
 	PostLoungeFare    float64 `json:"post_lounge_fare"`
