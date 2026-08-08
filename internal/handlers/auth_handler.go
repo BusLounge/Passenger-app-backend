@@ -454,7 +454,7 @@ func (h *AuthHandler) VerifyOTP(c *gin.Context) {
 		Message:         "OTP verified successfully",
 		AccessToken:     accessToken,
 		RefreshToken:    refreshToken,
-		ExpiresIn:       3600, // 1 hour
+		ExpiresIn:       int(h.config.JWT.AccessTokenExpiry.Seconds()), // Dynamic expiry from config
 		IsNewUser:       isNew,
 		ProfileComplete: profileCompleted, // Use passenger table's profile_completed
 		Roles:           user.Roles,       // Include user roles in response
@@ -669,7 +669,7 @@ func (h *AuthHandler) VerifyOTPStaff(c *gin.Context) {
 		Message:         "OTP verified successfully",
 		AccessToken:     accessToken,
 		RefreshToken:    refreshToken,
-		ExpiresIn:       3600, // 1 hour
+		ExpiresIn:       int(h.config.JWT.AccessTokenExpiry.Seconds()), // Dynamic expiry from config
 		IsNewUser:       isNew,
 		ProfileComplete: user.ProfileCompleted,
 		Roles:           user.Roles, // Include user roles - empty [] for new users, ["driver"]/["conductor"] for existing staff
@@ -923,7 +923,7 @@ func (h *AuthHandler) VerifyOTPLoungeOwner(c *gin.Context, loungeOwnerRepo *data
 		Message:          "OTP verified successfully",
 		AccessToken:      accessToken,
 		RefreshToken:     refreshToken,
-		ExpiresIn:        3600, // 1 hour
+		ExpiresIn:        int(h.config.JWT.AccessTokenExpiry.Seconds()), // Dynamic expiry from config
 		IsNewUser:        isNew,
 		ProfileComplete:  user.ProfileCompleted,
 		Roles:            user.Roles,       // Include user roles including 'lounge_owner'
@@ -1594,7 +1594,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, RefreshTokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
-		ExpiresIn:    3600, // 1 hour
+		ExpiresIn:    int(h.config.JWT.AccessTokenExpiry.Seconds()), // Dynamic expiry from config
 		TokenType:    "Bearer",
 	})
 }

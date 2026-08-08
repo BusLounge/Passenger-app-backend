@@ -109,11 +109,11 @@ func (r *AppBookingRepository) GenerateBusBookingQR() (string, error) {
 // MASTER BOOKING OPERATIONS
 // ============================================================================
 
-// CreateBooking creates a new master booking with bus booking(s) and seats in a transaction
+// CreateBooking creates a new master booking and multiple bus bookings and seats in a transaction
 func (r *AppBookingRepository) CreateBooking(
 	booking *models.MasterBooking,
 	busBookings []*models.BusBooking,
-	seatsList [][]models.BusBookingSeat,
+	multipleSeats [][]models.BusBookingSeat,
 	tripSeatRepo *TripSeatRepository,
 ) (*models.BookingResponse, error) {
 	tx, err := r.db.Beginx()
@@ -130,7 +130,6 @@ func (r *AppBookingRepository) CreateBooking(
 	booking.BookingReference = bookingRef
 
 	// 2. Insert master booking
-	// Handle device_info JSON serialization
 	var deviceInfoJSON interface{}
 	if booking.DeviceInfo != nil && len(booking.DeviceInfo) > 0 {
 		jsonBytes, err := json.Marshal(booking.DeviceInfo)
@@ -169,31 +168,27 @@ func (r *AppBookingRepository) CreateBooking(
 		return nil, fmt.Errorf("failed to create booking: %w", err)
 	}
 
-	// 3 & 4 & 5. Insert bus booking(s) and seats
-	var firstBusBooking *models.BusBooking
-	var allSeats []models.BusBookingSeat
-	
-	for i, busBooking := range busBookings {
-		if len(seatsList) <= i {
-			return nil, fmt.Errorf("seats list index out of bounds for bus booking %d", i)
-		}
-		seats := seatsList[i]
+	allCreatedSeats := make([]models.BusBookingSeat, 0)
+	var firstQRCode string
 
-		// 3. Generate QR code for bus booking (use Go function, not DB function)
+	for idx, busBooking := range busBookings {
+		seats := multipleSeats[idx]
+
 		qrCode, err := r.GenerateBusBookingQR()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate QR code: %w", err)
+		}
+		if idx == 0 {
+			firstQRCode = qrCode
 		}
 		busBooking.QRCodeData = &qrCode
 		now := time.Now()
 		busBooking.QRGeneratedAt = &now
 
-		// 4. Insert bus booking (normalized - no duplicate columns)
 		busBooking.BookingID = booking.ID
 
-		// Validate scheduled_trip_id is not empty (prevents uuid syntax error)
 		if busBooking.ScheduledTripID == "" {
-			return nil, fmt.Errorf("failed to create bus booking: scheduled_trip_id is empty — cannot insert into UUID column")
+			return nil, fmt.Errorf("failed to create bus booking %d: scheduled_trip_id is empty", idx)
 		}
 
 		busBookingQuery := `
@@ -213,21 +208,15 @@ func (r *AppBookingRepository) CreateBooking(
 			busBooking.Status, busBooking.QRCodeData, busBooking.QRGeneratedAt, busBooking.SpecialRequests,
 		).Scan(&busBooking.ID, &busBooking.CreatedAt, &busBooking.UpdatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create bus booking: %w", err)
+			return nil, fmt.Errorf("failed to create bus booking %d: %w", idx, err)
 		}
 
-		if firstBusBooking == nil {
-			firstBusBooking = busBooking
-		}
+		for i := range seats {
+			seats[i].BusBookingID = busBooking.ID
+			seats[i].ScheduledTripID = busBooking.ScheduledTripID
 
-		// 5. Insert bus booking seats (normalized - seat info comes from trip_seats) and update trip_seats
-		for j := range seats {
-			seats[j].BusBookingID = busBooking.ID
-			seats[j].ScheduledTripID = busBooking.ScheduledTripID
-
-			// Validate seat's scheduled_trip_id before insert
-			if seats[j].ScheduledTripID == "" {
-				return nil, fmt.Errorf("failed to create seat booking for seat %s: scheduled_trip_id is empty", seats[j].SeatNumber)
+			if seats[i].ScheduledTripID == "" {
+				return nil, fmt.Errorf("failed to create seat booking for seat %s: scheduled_trip_id is empty", seats[i].SeatNumber)
 			}
 
 			seatQuery := `
@@ -241,31 +230,29 @@ func (r *AppBookingRepository) CreateBooking(
 				) RETURNING id, created_at, updated_at`
 
 			err = tx.QueryRowx(seatQuery,
-				seats[j].BusBookingID, seats[j].ScheduledTripID, nullableUUID(seats[j].TripSeatID),
-				seats[j].PassengerName, seats[j].PassengerPhone, seats[j].PassengerEmail,
-				seats[j].PassengerGender, seats[j].PassengerNIC,
-				seats[j].IsPrimaryPassenger, seats[j].Status,
-			).Scan(&seats[j].ID, &seats[j].CreatedAt, &seats[j].UpdatedAt)
+				seats[i].BusBookingID, seats[i].ScheduledTripID, nullableUUID(seats[i].TripSeatID),
+				seats[i].PassengerName, seats[i].PassengerPhone, seats[i].PassengerEmail,
+				seats[i].PassengerGender, seats[i].PassengerNIC,
+				seats[i].IsPrimaryPassenger, seats[i].Status,
+			).Scan(&seats[i].ID, &seats[i].CreatedAt, &seats[i].UpdatedAt)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create seat booking for seat %s: %w", seats[j].SeatNumber, err)
+				return nil, fmt.Errorf("failed to create seat booking for seat %s: %w", seats[i].SeatNumber, err)
 			}
 
-			// Update trip_seats to mark as booked (trigger should handle this, but let's be explicit)
-			if seats[j].TripSeatID != nil {
+			if seats[i].TripSeatID != nil {
 				_, err = tx.Exec(`
 					UPDATE trip_seats 
 					SET status = 'booked', 
-						booking_type = 'app', 
-						bus_booking_seat_id = $1,
-						updated_at = now()
+					    booking_type = 'app', 
+					    bus_booking_seat_id = $1,
+					    updated_at = now()
 					WHERE id = $2`,
-					seats[j].ID, *seats[j].TripSeatID)
+					seats[i].ID, *seats[i].TripSeatID)
 				if err != nil {
-					return nil, fmt.Errorf("failed to update trip_seat status for seat %s: %w", seats[j].SeatNumber, err)
+					return nil, fmt.Errorf("failed to update trip seat %s: %w", seats[i].SeatNumber, err)
 				}
 			}
-			
-			allSeats = append(allSeats, seats[j])
+			allCreatedSeats = append(allCreatedSeats, seats[i])
 		}
 	}
 
@@ -274,12 +261,17 @@ func (r *AppBookingRepository) CreateBooking(
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	var firstBusBooking *models.BusBooking
+	if len(busBookings) > 0 {
+		firstBusBooking = busBookings[0]
+	}
+
 	return &models.BookingResponse{
 		Booking:     booking,
 		BusBooking:  firstBusBooking,
 		BusBookings: busBookings,
-		Seats:       allSeats,
-		QRCode:      *firstBusBooking.QRCodeData,
+		Seats:       allCreatedSeats,
+		QRCode:      firstQRCode,
 	}, nil
 }
 
@@ -303,11 +295,10 @@ func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterB
 		return nil, err
 	}
 
-	// Get bus bookings if exists
-	busBookings, err := r.GetBusBookingsByBookingID(bookingID)
-	if err == nil && len(busBookings) > 0 {
-		booking.BusBooking = busBookings[0] // For backward compatibility
-		booking.BusBookings = busBookings
+	// Get bus booking if exists
+	busBooking, err := r.GetBusBookingByBookingID(bookingID)
+	if err == nil {
+		booking.BusBooking = busBooking
 	}
 
 	// Get lounge bookings if exists
@@ -358,11 +349,10 @@ func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.
 		return nil, err
 	}
 
-	// Get bus bookings if exists
-	busBookings, err := r.GetBusBookingsByBookingID(booking.ID)
-	if err == nil && len(busBookings) > 0 {
-		booking.BusBooking = busBookings[0] // For backward compatibility
-		booking.BusBookings = busBookings
+	// Get bus booking if exists
+	busBooking, err := r.GetBusBookingByBookingID(booking.ID)
+	if err == nil {
+		booking.BusBooking = busBooking
 	}
 
 	// Get lounge bookings if exists
@@ -718,41 +708,6 @@ func (r *AppBookingRepository) GetBusBookingByBookingID(bookingID string) (*mode
 	}
 
 	return busBooking, nil
-}
-
-// GetBusBookingsByBookingID retrieves all bus bookings by master booking ID
-func (r *AppBookingRepository) GetBusBookingsByBookingID(bookingID string) ([]*models.BusBooking, error) {
-	query := `
-		SELECT bb.id, bb.booking_id, bb.scheduled_trip_id,
-		       bb.boarding_stop_id, bb.alighting_stop_id,
-		       bb.number_of_seats, bb.fare_per_seat, bb.total_fare,
-		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
-		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
-		       bb.cancelled_at, bb.cancellation_reason,
-		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
-		       bb.created_at, bb.updated_at
-		FROM bus_bookings bb
-		WHERE bb.booking_id = $1
-		ORDER BY bb.created_at ASC`
-
-	var busBookings []*models.BusBooking
-	err := r.db.Select(&busBookings, query, bookingID)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, bb := range busBookings {
-		// Get denormalized data via JOINs
-		r.populateBusBookingDetails(bb)
-
-		// Get seats
-		seats, err := r.GetSeatsByBusBookingID(bb.ID)
-		if err == nil {
-			bb.Seats = seats
-		}
-	}
-
-	return busBookings, nil
 }
 
 // GetBusBookingByQRCode retrieves bus booking by QR code
