@@ -169,13 +169,8 @@ type MasterBooking struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 
 	// Related data (not in DB, populated by queries)
-<<<<<<< HEAD
-	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"`
-	BusBookings    []*BusBooking   `json:"bus_bookings,omitempty" db:"-"`
-=======
 	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"` // First/legacy
-	BusBookings    []BusBooking    `json:"bus_bookings,omitempty" db:"-"`
->>>>>>> 148d0ed (round trip backend implementation)
+	BusBookings    []*BusBooking   `json:"bus_bookings,omitempty" db:"-"`
 	LoungeBookings []LoungeBooking `json:"lounge_bookings,omitempty" db:"-"`
 }
 
@@ -363,17 +358,10 @@ type CancelAppBookingRequest struct {
 
 // BookingResponse is the response after creating a booking
 type BookingResponse struct {
-<<<<<<< HEAD
 	Booking     *MasterBooking     `json:"booking"`
 	BusBooking  *BusBooking        `json:"bus_booking,omitempty"` // For backward compatibility
 	BusBookings []*BusBooking      `json:"bus_bookings,omitempty"`
 	Seats       []BusBookingSeat   `json:"seats,omitempty"`
-=======
-	Booking    *MasterBooking   `json:"booking"`
-	BusBooking  *BusBooking      `json:"bus_booking,omitempty"`
-	BusBookings []*BusBooking    `json:"bus_bookings,omitempty"`
-	Seats      []BusBookingSeat `json:"seats,omitempty"`
->>>>>>> 148d0ed (round trip backend implementation)
 	QRCode     string           `json:"qr_code,omitempty"`
 }
 

@@ -734,6 +734,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 
 	// 7. Create actual bookings in a transaction
 	var busBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID *uuid.UUID
+	var returnBusBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID *uuid.UUID
 	var masterRef string
 	var masterBookingID *uuid.UUID
 
@@ -799,6 +800,8 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 				if err != nil {
 					s.logger.WithError(err).Error("Failed to create return pre-trip lounge booking")
 				} else {
+					id := returnPreBooking.ID
+					returnPreLoungeBookingID = &id
 					// We don't link the return lounge booking ID back to the intents table since it requires no schema changes
 					s.logger.WithField("return_pre_lounge_booking_id", returnPreBooking.ID).Info("Return pre-trip lounge booking inserted successfully")
 					
@@ -865,6 +868,8 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 				if err != nil {
 					s.logger.WithError(err).Error("Failed to create return post-trip lounge booking")
 				} else {
+					id := returnPostBooking.ID
+					returnPostLoungeBookingID = &id
 					s.logger.WithField("return_post_lounge_booking_id", returnPostBooking.ID).Info("Return post-trip lounge booking inserted successfully")
 					
 					s.loungeBookingRepo.UpdateLoungeBookingStatus(returnPostBooking.ID, models.LoungeBookingStatusConfirmed)
@@ -880,7 +885,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 	}
 
 	// 8. Mark intent as confirmed
-	if err := s.intentRepo.UpdateIntentConfirmed(intent.ID, busBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID); err != nil {
+	if err := s.intentRepo.UpdateIntentConfirmed(intent.ID, busBookingID, returnBusBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID); err != nil {
 		return nil, fmt.Errorf("failed to mark intent as confirmed: %w", err)
 	}
 
