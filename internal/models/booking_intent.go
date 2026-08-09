@@ -70,7 +70,7 @@ type BusIntentPayload struct {
 	SearchToLounge    *string            `json:"search_to_lounge,omitempty"`
 	TripInfo          *BusIntentTripInfo `json:"trip_info,omitempty"` // Denormalized for display
 	Legs              []BusIntentLegPayload `json:"legs,omitempty"`
-	ReturnTrip        *BusIntentPayload     `json:"return_trip,omitempty"` // Added for round trip
+	ReturnTrip        *BusIntentPayload  `json:"return_trip,omitempty"` // Added for round trip
 }
 
 // BusIntentLegPayload stores leg details for a transit bus booking intent
@@ -392,12 +392,13 @@ type CreateBookingIntentRequest struct {
 
 	// Bus booking data (required for bus_only and combined)
 	Bus       *BusIntentRequest `json:"bus,omitempty"`
+	// Optional return bus for round-trips
 	ReturnBus *BusIntentRequest `json:"return_bus,omitempty"`
 
 	// Lounge booking data (optional)
-	PreTripLounge  *LoungeIntentRequest `json:"pre_trip_lounge,omitempty"`
-	TransitLounge  *LoungeIntentRequest `json:"transit_lounge,omitempty"`
-	PostTripLounge *LoungeIntentRequest `json:"post_trip_lounge,omitempty"`
+	PreTripLounge        *LoungeIntentRequest `json:"pre_trip_lounge,omitempty"`
+	TransitLounge        *LoungeIntentRequest `json:"transit_lounge,omitempty"`
+	PostTripLounge       *LoungeIntentRequest `json:"post_trip_lounge,omitempty"`
 	ReturnPreTripLounge  *LoungeIntentRequest `json:"return_pre_trip_lounge,omitempty"`
 	ReturnPostTripLounge *LoungeIntentRequest `json:"return_post_trip_lounge,omitempty"`
 
