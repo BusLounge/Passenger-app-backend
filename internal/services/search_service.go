@@ -171,10 +171,12 @@ func (s *SearchService) SearchTrips(
 
 	// --- FALLBACK TO REGULAR SEARCH IF NO LOUNGES FOUND ---
 	fallbackMessage := ""
+	staticStopPairFound := false
 	if len(results) == 0 {
 		s.logger.Info("No lounges found, falling back to regular stop-to-stop search")
 		pair, err := s.repo.FindStopPairOnSameRoute(req.From, req.To)
 		if err == nil && pair.Matched {
+			staticStopPairFound = true
 			results, err = s.repo.FindDirectTrips(pair.FromID, pair.ToID, searchTime, req.Limit)
 			if err == nil && len(results) > 0 {
 				searchType = "stop_direct"
@@ -184,16 +186,17 @@ func (s *SearchService) SearchTrips(
 	}
 
 	// Build the response
+	matchedStops := len(results) > 0 || staticRouteMessage != "" || staticStopPairFound
 	response := &models.SearchResponse{
 		Status: "success",
 		SearchDetails: models.SearchDetails{
 			FromStop: models.StopInfo{
 				OriginalInput: req.From,
-				Matched:       len(results) > 0,
+				Matched:       matchedStops,
 			},
 			ToStop: models.StopInfo{
 				OriginalInput: req.To,
-				Matched:       len(results) > 0,
+				Matched:       matchedStops,
 			},
 			SearchType: searchType,
 		},
@@ -203,12 +206,18 @@ func (s *SearchService) SearchTrips(
 
 	if len(results) == 0 {
 		response.Status = "success"
-		response.Message = fmt.Sprintf(
-			"No routes found from '%s' to '%s' even after expanding search radius to %.0fkm. Please try a different date or time.",
-			req.From, req.To, usedRadius/1000,
-		)
-		response.RouteExists = false
-		response.DiscoveryStatus = "no_routes"
+		if staticStopPairFound {
+			response.Message = "A route exists between these stops, but no buses are scheduled for this date."
+			response.RouteExists = true
+			response.DiscoveryStatus = "route_available"
+		} else {
+			response.Message = fmt.Sprintf(
+				"No routes found from '%s' to '%s' even after expanding search radius to %.0fkm. Please try a different date or time.",
+				req.From, req.To, usedRadius/1000,
+			)
+			response.RouteExists = false
+			response.DiscoveryStatus = "no_routes"
+		}
 	} else if staticRouteMessage != "" {
 		response.Message = staticRouteMessage
 		response.RouteExists = true
