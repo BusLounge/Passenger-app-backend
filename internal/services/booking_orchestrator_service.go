@@ -733,7 +733,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 	}
 
 	// 7. Create actual bookings in a transaction
-	var busBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID *uuid.UUID
+	var busBookingID, returnBusBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID *uuid.UUID
 	var masterRef string
 	var masterBookingID *uuid.UUID
 
@@ -880,7 +880,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 	}
 
 	// 8. Mark intent as confirmed
-	if err := s.intentRepo.UpdateIntentConfirmed(intent.ID, busBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID); err != nil {
+	if err := s.intentRepo.UpdateIntentConfirmed(intent.ID, busBookingID, returnBusBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID); err != nil {
 		return nil, fmt.Errorf("failed to mark intent as confirmed: %w", err)
 	}
 
@@ -1381,6 +1381,8 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	preTripLounge *models.LoungeIntentPayload,
 	transitLounge *models.LoungeIntentPayload,
 	postTripLounge *models.LoungeIntentPayload,
+	returnPreTripLounge *models.LoungeIntentPayload,
+	returnPostTripLounge *models.LoungeIntentPayload,
 ) (*models.BookingIntentResponse, error) {
 	// 1. Get and validate intent
 	intent, err := s.intentRepo.GetIntentByID(intentID)
@@ -1444,7 +1446,7 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	}
 
 	// 2. Calculate additional lounge fares
-	var preLoungeFare, transitLoungeFare, postLoungeFare float64
+	var preLoungeFare, transitLoungeFare, postLoungeFare, returnPreLoungeFare, returnPostLoungeFare float64
 
 	if preTripLounge != nil {
 		loungeID, _ := uuid.Parse(preTripLounge.LoungeID)
@@ -1575,8 +1577,63 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 		}
 	}
 
-	// 3. Update intent with lounge data
-	newTotal := intent.BusFare + preLoungeFare + transitLoungeFare + postLoungeFare
+	
+if returnPreTripLounge != nil {
+loungeID, _ := uuid.Parse(returnPreTripLounge.LoungeID)
+lounge, err := s.loungeRepo.GetLoungeByID(loungeID)
+if err == nil && lounge != nil && lounge.Status == "approved" && lounge.IsOperational {
+returnPreLoungeFare = returnPreTripLounge.TotalPrice
+expiresAt := time.Now().Add(s.config.IntentTTL)
+loungeDate := parseLoungeDate(returnPreTripLounge.Date)
+checkInTime := returnPreTripLounge.CheckInTime
+if checkInTime == "" { checkInTime = "09:00" }
+checkOutTime := calculateCheckoutTime(checkInTime, returnPreTripLounge.PricingType)
+
+hold := &models.LoungeCapacityHold{
+ID:            uuid.New(),
+LoungeID:      loungeID,
+IntentID:      intent.ID,
+Date:          loungeDate,
+TimeSlotStart: checkInTime,
+TimeSlotEnd:   checkOutTime,
+GuestsCount:   returnPreTripLounge.GuestCount,
+HeldUntil:     expiresAt,
+Status:        "held",
+CreatedAt:     time.Now(),
+}
+s.intentRepo.CreateLoungeCapacityHold(hold)
+}
+}
+
+if returnPostTripLounge != nil {
+loungeID, _ := uuid.Parse(returnPostTripLounge.LoungeID)
+lounge, err := s.loungeRepo.GetLoungeByID(loungeID)
+if err == nil && lounge != nil && lounge.Status == "approved" && lounge.IsOperational {
+returnPostLoungeFare = returnPostTripLounge.TotalPrice
+expiresAt := time.Now().Add(s.config.IntentTTL)
+loungeDate := parseLoungeDate(returnPostTripLounge.Date)
+checkInTime := returnPostTripLounge.CheckInTime
+if checkInTime == "" { checkInTime = "09:00" }
+checkOutTime := calculateCheckoutTime(checkInTime, returnPostTripLounge.PricingType)
+
+hold := &models.LoungeCapacityHold{
+ID:            uuid.New(),
+LoungeID:      loungeID,
+IntentID:      intent.ID,
+Date:          loungeDate,
+TimeSlotStart: checkInTime,
+TimeSlotEnd:   checkOutTime,
+GuestsCount:   returnPostTripLounge.GuestCount,
+HeldUntil:     expiresAt,
+Status:        "held",
+CreatedAt:     time.Now(),
+}
+s.intentRepo.CreateLoungeCapacityHold(hold)
+}
+}
+
+// 3. Update intent with lounge data
+	newTotal := intent.BusFare + intent.PricingSnapshot.ReturnBusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
 	newExpiresAt := time.Now().Add(s.config.IntentTTL) // Extend the hold timer
 
 	s.logger.WithFields(logrus.Fields{
@@ -1595,9 +1652,13 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 		preTripLounge,
 		transitLounge,
 		postTripLounge,
+		returnPreTripLounge,
+		returnPostTripLounge,
 		preLoungeFare,
 		transitLoungeFare,
 		postLoungeFare,
+		returnPreLoungeFare,
+		returnPostLoungeFare,
 		newTotal,
 		newExpiresAt,
 	)

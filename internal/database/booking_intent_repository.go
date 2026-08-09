@@ -430,14 +430,18 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 	preTripLounge *models.LoungeIntentPayload,
 	transitLounge *models.LoungeIntentPayload,
 	postTripLounge *models.LoungeIntentPayload,
+	returnPreTripLounge *models.LoungeIntentPayload,
+	returnPostTripLounge *models.LoungeIntentPayload,
 	preLoungeFare float64,
 	transitLoungeFare float64,
 	postLoungeFare float64,
+	returnPreLoungeFare float64,
+	returnPostLoungeFare float64,
 	newTotal float64,
 	newExpiresAt time.Time,
 ) error {
 	// Convert lounge payloads to JSON - use *string to properly handle JSONB
-	var preLoungeJSON, transitLoungeJSON, postLoungeJSON *string
+	var preLoungeJSON, transitLoungeJSON, postLoungeJSON, returnPreLoungeJSON, returnPostLoungeJSON *string
 	var err error
 
 	if preTripLounge != nil {
@@ -467,6 +471,24 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		postLoungeJSON = &s
 	}
 
+	if returnPreTripLounge != nil {
+		jsonBytes, err := json.Marshal(returnPreTripLounge)
+		if err != nil {
+			return fmt.Errorf("failed to marshal return-pre-trip lounge: %w", err)
+		}
+		s := string(jsonBytes)
+		returnPreLoungeJSON = &s
+	}
+
+	if returnPostTripLounge != nil {
+		jsonBytes, err := json.Marshal(returnPostTripLounge)
+		if err != nil {
+			return fmt.Errorf("failed to marshal return-post-trip lounge: %w", err)
+		}
+		s := string(jsonBytes)
+		returnPostLoungeJSON = &s
+	}
+
 	// Update intent type to 'combined' (bus + lounge)
 	// Must match DB constraint: chk_intent_type_matches_payload
 	newIntentType := "combined"
@@ -477,9 +499,13 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		    pre_trip_lounge_intent = COALESCE($3, pre_trip_lounge_intent),
 		    transit_lounge_intent = COALESCE($4, transit_lounge_intent),
 		    post_trip_lounge_intent = COALESCE($5, post_trip_lounge_intent),
+		    return_pre_trip_lounge_intent = COALESCE($11, return_pre_trip_lounge_intent),
+		    return_post_trip_lounge_intent = COALESCE($12, return_post_trip_lounge_intent),
 		    pre_lounge_fare = CASE WHEN $6 > 0 THEN $6 ELSE pre_lounge_fare END,
 		    transit_lounge_fare = CASE WHEN $7 > 0 THEN $7 ELSE transit_lounge_fare END,
 		    post_lounge_fare = CASE WHEN $8 > 0 THEN $8 ELSE post_lounge_fare END,
+		    return_pre_lounge_fare = CASE WHEN $13 > 0 THEN $13 ELSE return_pre_lounge_fare END,
+		    return_post_lounge_fare = CASE WHEN $14 > 0 THEN $14 ELSE return_post_lounge_fare END,
 		    total_amount = $9,
 		    expires_at = $10,
 		    updated_at = NOW()
@@ -496,6 +522,10 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		postLoungeFare,
 		newTotal,
 		newExpiresAt,
+		returnPreLoungeJSON,
+		returnPostLoungeJSON,
+		returnPreLoungeFare,
+		returnPostLoungeFare,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update intent: %w", err)
