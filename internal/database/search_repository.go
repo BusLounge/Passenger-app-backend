@@ -778,6 +778,100 @@ func (r *SearchRepository) FindDirectTrips(
 }
 
 // LogSearch records a search query for analytics
+// CheckRouteExists implements Step 1: Check if a valid route exists between origin and destination regardless of date
+func (r *SearchRepository) CheckRouteExists(
+	fromLat, fromLng float64,
+	toLat, toLng float64,
+	radiusMeters float64,
+) (bool, error) {
+
+	const query = `
+WITH
+haversine AS (SELECT 6371000.0 AS erm),
+
+start_lounges AS (
+    SELECT l.id, l.lounge_name,
+           erm * 2 * ASIN(SQRT(
+               POWER(SIN(RADIANS((l.latitude - $1)/2)),2) +
+               COS(RADIANS($1))*COS(RADIANS(l.latitude))*
+               POWER(SIN(RADIANS((l.longitude - $2)/2)),2)
+           )) AS dist_m
+    FROM lounges l, haversine
+    WHERE l.status = 'approved' AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL
+      AND erm * 2 * ASIN(SQRT(
+              POWER(SIN(RADIANS((l.latitude - $1)/2)),2) +
+              COS(RADIANS($1))*COS(RADIANS(l.latitude))*
+              POWER(SIN(RADIANS((l.longitude - $2)/2)),2)
+          )) <= $5
+),
+
+drop_lounges AS (
+    SELECT l.id, l.lounge_name,
+           erm * 2 * ASIN(SQRT(
+               POWER(SIN(RADIANS((l.latitude - $3)/2)),2) +
+               COS(RADIANS($3))*COS(RADIANS(l.latitude))*
+               POWER(SIN(RADIANS((l.longitude - $4)/2)),2)
+           )) AS dist_m
+    FROM lounges l, haversine
+    WHERE l.status = 'approved' AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL
+      AND erm * 2 * ASIN(SQRT(
+              POWER(SIN(RADIANS((l.latitude - $3)/2)),2) +
+              COS(RADIANS($3))*COS(RADIANS(l.latitude))*
+              POWER(SIN(RADIANS((l.longitude - $4)/2)),2)
+          )) <= $5
+),
+
+direct_pairs AS (
+    SELECT 1
+    FROM start_lounges sl
+    CROSS JOIN drop_lounges dl
+    JOIN lounge_routes lr_s ON lr_s.lounge_id = sl.id
+    JOIN lounge_routes lr_d ON lr_d.lounge_id = dl.id
+                           AND lr_d.master_route_id = lr_s.master_route_id
+    JOIN master_route_stops mrs_s ON mrs_s.id = lr_s.stop_before_id
+    JOIN master_route_stops mrs_d ON mrs_d.id = lr_d.stop_before_id
+    JOIN master_routes mr ON mr.id = lr_s.master_route_id AND mr.is_active = true
+    WHERE mrs_s.stop_order < mrs_d.stop_order AND sl.id <> dl.id
+    LIMIT 1
+),
+
+transit_chains_base AS (
+    SELECT 1
+    FROM start_lounges sl
+    CROSS JOIN drop_lounges dl
+    JOIN lounges tl ON tl.id <> sl.id AND tl.id <> dl.id
+    JOIN lounge_routes lr1  ON lr1.lounge_id  = sl.id
+    JOIN lounge_routes lrt1 ON lrt1.lounge_id = tl.id AND lrt1.master_route_id = lr1.master_route_id
+    JOIN master_route_stops mrs1_s ON mrs1_s.id = lr1.stop_before_id
+    JOIN master_route_stops mrs1_t ON mrs1_t.id = lrt1.stop_before_id
+    JOIN lounge_routes lrt2 ON lrt2.lounge_id = tl.id
+    JOIN lounge_routes lr2  ON lr2.lounge_id  = dl.id AND lr2.master_route_id = lrt2.master_route_id
+    JOIN master_route_stops mrs2_t ON mrs2_t.id = lrt2.stop_before_id
+    JOIN master_route_stops mrs2_d ON mrs2_d.id = lr2.stop_before_id
+    JOIN master_routes mr1 ON mr1.id = lr1.master_route_id AND mr1.is_active = true
+    JOIN master_routes mr2 ON mr2.id = lr2.master_route_id AND mr2.is_active = true
+    WHERE mrs1_s.stop_order < mrs1_t.stop_order
+      AND mrs2_t.stop_order < mrs2_d.stop_order
+    LIMIT 1
+)
+
+SELECT EXISTS (
+    SELECT 1 FROM direct_pairs 
+    UNION ALL 
+    SELECT 1 FROM transit_chains_base
+)
+`
+
+	var exists bool
+	err := r.db.Get(&exists, query, fromLat, fromLng, toLat, toLng, radiusMeters)
+	if err != nil {
+		return false, fmt.Errorf("CheckRouteExists error: %w", err)
+	}
+
+	return exists, nil
+}
+
+// LogSearch records a search query for analytics
 func (r *SearchRepository) LogSearch(log *models.SearchLog) error {
 	query := `
 		INSERT INTO search_logs (
