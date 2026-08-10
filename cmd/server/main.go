@@ -364,6 +364,13 @@ func main() {
 	)
 	logger.Info("✓ Booking Orchestration system initialized")
 
+	// Initialize Call Logs System
+	logger.Info("📞 Initializing Call Logs system...")
+	callLogRepo := database.NewCallLogRepository(db)
+	callLogService := services.NewCallLogService(callLogRepo, logger)
+	callLogHandler := handlers.NewCallLogHandler(callLogService, logger)
+	logger.Info("✓ Call Logs system initialized")
+
 	// Start background job for intent expiration
 	intentExpirationService := services.NewIntentExpirationService(bookingIntentRepo, logger)
 	intentExpirationService.Start()
@@ -986,6 +993,16 @@ func main() {
 			systemSettings.GET("", systemSettingHandler.GetAllSettings)
 			systemSettings.GET("/:key", systemSettingHandler.GetSettingByKey)
 			systemSettings.PUT("/:key", systemSettingHandler.UpdateSetting)
+		}
+
+		// Call Logs routes (protected)
+		calls := v1.Group("/calls")
+		calls.Use(middleware.AuthMiddleware(jwtService))
+		{
+			calls.POST("", callLogHandler.InitiateCall)
+			calls.PUT("/:id/status", callLogHandler.UpdateCallStatus)
+			calls.POST("/:id/end", callLogHandler.EndCall)
+			calls.GET("/user/logs", callLogHandler.GetUserCallLogs)
 		}
 
 		// Admin routes
