@@ -147,32 +147,10 @@ func (s *SearchService) SearchTrips(
 	}
 
 	// --- FALLBACK TO STATIC ROUTE SEARCH IF NO SCHEDULED TRIPS FOUND ---
-	staticRouteMessage := ""
-	if len(results) == 0 && fromLat != nil && fromLng != nil && toLat != nil && toLng != nil {
-		s.logger.Info("No scheduled trips found, attempting static route discovery")
-		staticResults, err := s.repo.FindStaticLoungeRoutes(
-			*fromLat, *fromLng,
-			*toLat, *toLng,
-			usedRadius, // Use the same radius that was used for scheduled search
-		)
-		if err == nil && len(staticResults) > 0 {
-			results = staticResults
-			searchType = "static_route"
-			staticRouteMessage = fmt.Sprintf(
-				"A physical route exists via %s, but no buses are scheduled for this date.",
-				staticResults[0].RouteName,
-			)
-			s.logger.WithFields(logrus.Fields{
-				"static_routes": len(staticResults),
-				"route_name":    staticResults[0].RouteName,
-			}).Info("Found static routes — returning ghost trips")
-		}
-	}
-
-	// --- FALLBACK TO REGULAR SEARCH IF NO LOUNGES FOUND ---
+	// --- FALLBACK TO REGULAR SEARCH IF NO LOUNGE TRIPS FOUND ---
 	fallbackMessage := ""
 	if len(results) == 0 {
-		s.logger.Info("No lounges found, falling back to regular stop-to-stop search")
+		s.logger.Info("No scheduled lounge trips found, falling back to regular stop-to-stop search")
 		pair, err := s.repo.FindStopPairOnSameRoute(req.From, req.To)
 		if err == nil && pair.Matched {
 			results, err = s.repo.FindDirectTrips(pair.FromID, pair.ToID, searchTime, req.Limit)
@@ -183,17 +161,38 @@ func (s *SearchService) SearchTrips(
 		}
 	}
 
+	// --- STEP 1 & 2: ROUTE EXISTENCE VS BUS AVAILABILITY ---
+	routeExists := len(results) > 0
+	if !routeExists {
+		s.logger.Info("No scheduled trips found, checking if route physically exists in the system...")
+		if fromLat != nil && fromLng != nil && toLat != nil && toLng != nil {
+			// Step 1: Check by coordinates (handles direct + transit lounge routes)
+			exists, err := s.repo.CheckRouteExists(*fromLat, *fromLng, *toLat, *toLng, usedRadius)
+			if err == nil {
+				routeExists = exists
+			}
+		}
+		
+		if !routeExists {
+			// Fallback Step 1: Check by exact stop name match
+			pair, err := s.repo.FindStopPairOnSameRoute(req.From, req.To)
+			if err == nil && pair.Matched {
+				routeExists = true
+			}
+		}
+	}
+
 	// Build the response
 	response := &models.SearchResponse{
 		Status: "success",
 		SearchDetails: models.SearchDetails{
 			FromStop: models.StopInfo{
 				OriginalInput: req.From,
-				Matched:       len(results) > 0,
+				Matched:       routeExists,
 			},
 			ToStop: models.StopInfo{
 				OriginalInput: req.To,
-				Matched:       len(results) > 0,
+				Matched:       routeExists,
 			},
 			SearchType: searchType,
 		},
@@ -203,25 +202,26 @@ func (s *SearchService) SearchTrips(
 
 	if len(results) == 0 {
 		response.Status = "success"
-		response.Message = fmt.Sprintf(
-			"No routes found from '%s' to '%s' even after expanding search radius to %.0fkm. Please try a different date or time.",
-			req.From, req.To, usedRadius/1000,
-		)
-		response.RouteExists = false
-		response.DiscoveryStatus = "no_routes"
-	} else if staticRouteMessage != "" {
-		response.Message = staticRouteMessage
-		response.RouteExists = true
-		response.DiscoveryStatus = "route_available"
-	} else if fallbackMessage != "" {
-		response.Message = fallbackMessage
-		response.RouteExists = true
-		response.DiscoveryStatus = "scheduled_available"
+		response.RouteExists = routeExists
+		if routeExists {
+			response.Message = "A route exists between these locations, but no buses are scheduled for this date."
+			response.DiscoveryStatus = "route_available" // Buses not available
+		} else {
+			response.Message = fmt.Sprintf(
+				"No routes found from '%s' to '%s' even after expanding search radius to %.0fkm. Please try a different date or time.",
+				req.From, req.To, usedRadius/1000,
+			)
+			response.DiscoveryStatus = "no_routes" // Routes not available
+		}
 	} else {
-		response.Message = fmt.Sprintf(
-			"Found %d direct lounge route(s) from '%s' to '%s' (search radius: %.0fkm).",
-			len(results), req.From, req.To, usedRadius/1000,
-		)
+		if fallbackMessage != "" {
+			response.Message = fallbackMessage
+		} else {
+			response.Message = fmt.Sprintf(
+				"Found %d route(s) from '%s' to '%s' (search radius: %.0fkm).",
+				len(results), req.From, req.To, usedRadius/1000,
+			)
+		}
 		response.RouteExists = true
 		response.DiscoveryStatus = "scheduled_available"
 	}
