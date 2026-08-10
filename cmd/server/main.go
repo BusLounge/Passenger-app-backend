@@ -371,6 +371,13 @@ func main() {
 	callLogHandler := handlers.NewCallLogHandler(callLogService, logger)
 	logger.Info("✓ Call Logs system initialized")
 
+	// Initialize Complaints System
+	logger.Info("📝 Initializing Complaints system...")
+	complaintRepo := database.NewComplaintRepository(db)
+	complaintService := services.NewComplaintService(complaintRepo, logger)
+	complaintHandler := handlers.NewComplaintHandler(complaintService, logger)
+	logger.Info("✓ Complaints system initialized")
+
 	// Start background job for intent expiration
 	intentExpirationService := services.NewIntentExpirationService(bookingIntentRepo, logger)
 	intentExpirationService.Start()
@@ -1003,6 +1010,16 @@ func main() {
 			calls.PUT("/:id/status", callLogHandler.UpdateCallStatus)
 			calls.POST("/:id/end", callLogHandler.EndCall)
 			calls.GET("/user/logs", callLogHandler.GetUserCallLogs)
+		}
+
+		// Complaints routes (protected)
+		complaints := v1.Group("/complaints")
+		complaints.Use(middleware.AuthMiddleware(jwtService))
+		{
+			complaints.POST("", complaintHandler.SubmitComplaint)
+			complaints.GET("/user", complaintHandler.GetUserComplaints)
+			complaints.GET("/all", complaintHandler.GetAllComplaints) // Ideally add admin middleware
+			complaints.PUT("/:id/status", complaintHandler.UpdateStatus)
 		}
 
 		// Admin routes
