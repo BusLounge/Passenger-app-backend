@@ -169,7 +169,7 @@ type MasterBooking struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 
 	// Related data (not in DB, populated by queries)
-	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"`
+	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"` // First/legacy
 	BusBookings    []*BusBooking   `json:"bus_bookings,omitempty" db:"-"`
 	LoungeBookings []LoungeBooking `json:"lounge_bookings,omitempty" db:"-"`
 }
@@ -215,6 +215,8 @@ type BusBooking struct {
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+
+	IsReturn bool `json:"is_return" db:"is_return"`
 
 	// Related data (populated via JOINs for display)
 	Seats []BusBookingSeat `json:"seats,omitempty" db:"-"`

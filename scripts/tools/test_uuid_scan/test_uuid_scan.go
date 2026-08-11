@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -29,3 +31,4 @@ func main() {
 		fmt.Println("Success:", len(tests), tests[0].MasterBookingID)
 	}
 }
+

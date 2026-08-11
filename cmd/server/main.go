@@ -879,7 +879,6 @@ func main() {
 		}
 		logger.Info("📱 App Booking routes registered successfully")
 
-
 		// ============================================================================
 		// ACTIVE TRIP TRACKING ROUTES (Passenger bus tracking)
 		// ============================================================================

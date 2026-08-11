@@ -33,6 +33,7 @@ func (r *BookingIntentRepository) CreateIntent(intent *models.BookingIntent) err
 
 	// Marshal JSONB fields - use *string to properly handle NULL and JSON
 	var busIntentJSON, preLoungeJSON, transitLoungeJSON, postLoungeJSON, transportIntentsJSON *string
+	var returnPreLoungeJSON, returnPostLoungeJSON *string
 	var pricingSnapshotJSON string
 	var err error
 
@@ -43,6 +44,15 @@ func (r *BookingIntentRepository) CreateIntent(intent *models.BookingIntent) err
 		}
 		s := string(jsonBytes)
 		busIntentJSON = &s
+	}
+	var returnBusIntentJSON *string
+	if intent.ReturnBusIntent != nil {
+		jsonBytes, err := json.Marshal(intent.ReturnBusIntent)
+		if err != nil {
+			return fmt.Errorf("failed to marshal return_bus_intent: %w", err)
+		}
+		s := string(jsonBytes)
+		returnBusIntentJSON = &s
 	}
 	if intent.PreTripLoungeIntent != nil {
 		jsonBytes, err := json.Marshal(intent.PreTripLoungeIntent)
@@ -68,6 +78,22 @@ func (r *BookingIntentRepository) CreateIntent(intent *models.BookingIntent) err
 		s := string(jsonBytes)
 		postLoungeJSON = &s
 	}
+	if intent.ReturnPreTripLoungeIntent != nil {
+		jsonBytes, err := json.Marshal(intent.ReturnPreTripLoungeIntent)
+		if err != nil {
+			return fmt.Errorf("failed to marshal return_pre_trip_lounge_intent: %w", err)
+		}
+		s := string(jsonBytes)
+		returnPreLoungeJSON = &s
+	}
+	if intent.ReturnPostTripLoungeIntent != nil {
+		jsonBytes, err := json.Marshal(intent.ReturnPostTripLoungeIntent)
+		if err != nil {
+			return fmt.Errorf("failed to marshal return_post_trip_lounge_intent: %w", err)
+		}
+		s := string(jsonBytes)
+		returnPostLoungeJSON = &s
+	}
 	if len(intent.TransportIntents) > 0 {
 		jsonBytes, err := json.Marshal(intent.TransportIntents)
 		if err != nil {
@@ -85,17 +111,17 @@ func (r *BookingIntentRepository) CreateIntent(intent *models.BookingIntent) err
 	query := `
 		INSERT INTO booking_intents (
 			id, user_id, intent_type, status,
-			bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, transport_intents,
+			bus_intent, return_bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, return_pre_trip_lounge_intent, return_post_trip_lounge_intent, transport_intents,
 			bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, total_amount, currency,
 			pricing_snapshot, payment_gateway, expires_at,
 			idempotency_key, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 		)`
 
 	_, err = r.db.Exec(query,
 		intent.ID, intent.UserID, intent.IntentType, intent.Status,
-		busIntentJSON, preLoungeJSON, transitLoungeJSON, postLoungeJSON, transportIntentsJSON,
+		busIntentJSON, returnBusIntentJSON, preLoungeJSON, transitLoungeJSON, postLoungeJSON, returnPreLoungeJSON, returnPostLoungeJSON, transportIntentsJSON,
 		intent.BusFare, intent.PreLoungeFare, intent.TransitLoungeFare, intent.PostLoungeFare, intent.TotalAmount, intent.Currency,
 		pricingSnapshotJSON, intent.PaymentGateway, intent.ExpiresAt,
 		intent.IdempotencyKey, intent.CreatedAt, intent.UpdatedAt,
@@ -106,16 +132,16 @@ func (r *BookingIntentRepository) CreateIntent(intent *models.BookingIntent) err
 // GetIntentByID retrieves an intent by ID
 func (r *BookingIntentRepository) GetIntentByID(intentID uuid.UUID) (*models.BookingIntent, error) {
 	var intent models.BookingIntent
-	var busIntentJSON, preLoungeJSON, transitLoungeJSON, postLoungeJSON, transportIntentsJSON, pricingSnapshotJSON sql.NullString
+	var busIntentJSON, returnBusIntentJSON, preLoungeJSON, transitLoungeJSON, postLoungeJSON, returnPreLoungeJSON, returnPostLoungeJSON, transportIntentsJSON, pricingSnapshotJSON sql.NullString
 	var paymentStatus sql.NullString
 
 	query := `
 		SELECT 
 			id, user_id, intent_type, status,
-			bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, transport_intents,
+			bus_intent, return_bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, return_pre_trip_lounge_intent, return_post_trip_lounge_intent, transport_intents,
 			bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, total_amount, currency,
 			pricing_snapshot, payment_reference, payment_status, payment_gateway,
-			bus_booking_id, pre_lounge_booking_id, transit_lounge_booking_id, post_lounge_booking_id,
+			bus_booking_id, return_bus_booking_id, pre_lounge_booking_id, transit_lounge_booking_id, post_lounge_booking_id, return_pre_lounge_booking_id, return_post_lounge_booking_id,
 			expires_at, payment_initiated_at, confirmed_at, expired_at,
 			created_at, updated_at, idempotency_key
 		FROM booking_intents
@@ -123,10 +149,10 @@ func (r *BookingIntentRepository) GetIntentByID(intentID uuid.UUID) (*models.Boo
 
 	err := r.db.QueryRow(query, intentID).Scan(
 		&intent.ID, &intent.UserID, &intent.IntentType, &intent.Status,
-		&busIntentJSON, &preLoungeJSON, &transitLoungeJSON, &postLoungeJSON, &transportIntentsJSON,
+		&busIntentJSON, &returnBusIntentJSON, &preLoungeJSON, &transitLoungeJSON, &postLoungeJSON, &returnPreLoungeJSON, &returnPostLoungeJSON, &transportIntentsJSON,
 		&intent.BusFare, &intent.PreLoungeFare, &intent.TransitLoungeFare, &intent.PostLoungeFare, &intent.TotalAmount, &intent.Currency,
 		&pricingSnapshotJSON, &intent.PaymentReference, &paymentStatus, &intent.PaymentGateway,
-		&intent.BusBookingID, &intent.PreLoungeBookingID, &intent.TransitLoungeBookingID, &intent.PostLoungeBookingID,
+		&intent.BusBookingID, &intent.ReturnBusBookingID, &intent.PreLoungeBookingID, &intent.TransitLoungeBookingID, &intent.PostLoungeBookingID, &intent.ReturnPreLoungeBookingID, &intent.ReturnPostLoungeBookingID,
 		&intent.ExpiresAt, &intent.PaymentInitiatedAt, &intent.ConfirmedAt, &intent.ExpiredAt,
 		&intent.CreatedAt, &intent.UpdatedAt, &intent.IdempotencyKey,
 	)
@@ -150,6 +176,12 @@ func (r *BookingIntentRepository) GetIntentByID(intentID uuid.UUID) (*models.Boo
 			return nil, fmt.Errorf("failed to unmarshal bus_intent: %w", err)
 		}
 	}
+	if returnBusIntentJSON.Valid && returnBusIntentJSON.String != "" {
+		intent.ReturnBusIntent = &models.BusIntentPayload{}
+		if err := json.Unmarshal([]byte(returnBusIntentJSON.String), intent.ReturnBusIntent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal return_bus_intent: %w", err)
+		}
+	}
 	if preLoungeJSON.Valid && preLoungeJSON.String != "" {
 		intent.PreTripLoungeIntent = &models.LoungeIntentPayload{}
 		if err := json.Unmarshal([]byte(preLoungeJSON.String), intent.PreTripLoungeIntent); err != nil {
@@ -166,6 +198,18 @@ func (r *BookingIntentRepository) GetIntentByID(intentID uuid.UUID) (*models.Boo
 		intent.PostTripLoungeIntent = &models.LoungeIntentPayload{}
 		if err := json.Unmarshal([]byte(postLoungeJSON.String), intent.PostTripLoungeIntent); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal post_trip_lounge_intent: %w", err)
+		}
+	}
+	if returnPreLoungeJSON.Valid && returnPreLoungeJSON.String != "" {
+		intent.ReturnPreTripLoungeIntent = &models.LoungeIntentPayload{}
+		if err := json.Unmarshal([]byte(returnPreLoungeJSON.String), intent.ReturnPreTripLoungeIntent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal return_pre_trip_lounge_intent: %w", err)
+		}
+	}
+	if returnPostLoungeJSON.Valid && returnPostLoungeJSON.String != "" {
+		intent.ReturnPostTripLoungeIntent = &models.LoungeIntentPayload{}
+		if err := json.Unmarshal([]byte(returnPostLoungeJSON.String), intent.ReturnPostTripLoungeIntent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal return_post_trip_lounge_intent: %w", err)
 		}
 	}
 	if transportIntentsJSON.Valid && transportIntentsJSON.String != "" {
@@ -296,11 +340,11 @@ func (r *BookingIntentRepository) UpdateIntentPaymentUID(intentID uuid.UUID, uid
 func (r *BookingIntentRepository) GetIntentByPaymentUID(uid string) (*models.BookingIntent, error) {
 	query := `
 		SELECT id, user_id, intent_type, status, 
-		       bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, transport_intents,
+		       bus_intent, return_bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, transport_intents, return_pre_trip_lounge_intent, return_post_trip_lounge_intent,
 		       bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, total_amount, currency,
 		       pricing_snapshot, payment_reference, payment_status, payment_gateway,
 		       payment_uid, payment_status_indicator,
-		       bus_booking_id, pre_lounge_booking_id, transit_lounge_booking_id, post_lounge_booking_id,
+		       bus_booking_id, return_bus_booking_id, pre_lounge_booking_id, transit_lounge_booking_id, post_lounge_booking_id, return_pre_lounge_booking_id, return_post_lounge_booking_id,
 		       expires_at, payment_initiated_at, confirmed_at, expired_at, created_at, updated_at,
 		       idempotency_key, passenger_name, passenger_phone
 		FROM booking_intents 
@@ -320,19 +364,22 @@ func (r *BookingIntentRepository) GetIntentByPaymentUID(uid string) (*models.Boo
 // UpdateIntentConfirmed marks intent as confirmed with booking IDs
 func (r *BookingIntentRepository) UpdateIntentConfirmed(
 	intentID uuid.UUID,
-	busBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID *uuid.UUID,
+	busBookingID, returnBusBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID *uuid.UUID,
 ) error {
 	query := `
 		UPDATE booking_intents 
 		SET status = 'confirmed',
 		    bus_booking_id = $2,
-		    pre_lounge_booking_id = $3,
-		    transit_lounge_booking_id = $4,
-		    post_lounge_booking_id = $5,
+		    return_bus_booking_id = $3,
+		    pre_lounge_booking_id = $4,
+		    transit_lounge_booking_id = $5,
+		    post_lounge_booking_id = $6,
+		    return_pre_lounge_booking_id = $7,
+		    return_post_lounge_booking_id = $8,
 		    confirmed_at = NOW(),
 		    updated_at = NOW()
 		WHERE id = $1 AND status IN ('held', 'payment_pending', 'confirming')`
-	result, err := r.db.Exec(query, intentID, busBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID)
+	result, err := r.db.Exec(query, intentID, busBookingID, returnBusBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID)
 	if err != nil {
 		return err
 	}

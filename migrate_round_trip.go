@@ -25,19 +25,22 @@ func main() {
 	}
 	defer conn.Close(context.Background())
 
-	rows, err := conn.Query(context.Background(), "SELECT enumlabel FROM pg_enum WHERE enumtypid = 'lounge_booking_type'::regtype")
-	if err != nil {
-		log.Fatalf("Query failed: %v", err)
-	}
-	defer rows.Close()
+	fmt.Println("Applying database migration for round trip...")
 
-	fmt.Println("lounge_booking_type enum values:")
-	for rows.Next() {
-		var val string
-		err := rows.Scan(&val)
-		if err != nil {
-			log.Fatalf("Scan failed: %v", err)
-		}
-		fmt.Println(val)
+	// Add new columns to booking_intents
+	alterQueries := []string{
+		"ALTER TABLE booking_intents ADD COLUMN IF NOT EXISTS return_bus_intent JSONB;",
+		"ALTER TABLE booking_intents ADD COLUMN IF NOT EXISTS return_bus_booking_id UUID REFERENCES bus_bookings(id);",
 	}
+
+	for _, q := range alterQueries {
+		_, err := conn.Exec(context.Background(), q)
+		if err != nil {
+			log.Printf("Error running query: %v\nQuery: %s", err, q)
+		} else {
+			fmt.Printf("Executed: %s\n", q)
+		}
+	}
+
+	fmt.Println("Database schema updated successfully!")
 }
