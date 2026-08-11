@@ -420,7 +420,7 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
 		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
-		  AND st.departure_datetime > NOW() AT TIME ZONE 'Asia/Colombo'
+		  AND (st.departure_datetime > NOW() AT TIME ZONE 'Asia/Colombo' - INTERVAL '24 hours' OR st.departure_datetime IS NULL)
 		ORDER BY st.departure_datetime ASC
 		LIMIT $2 OFFSET $3`
 
