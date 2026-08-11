@@ -1582,6 +1582,14 @@ transit_chains_base AS (
     JOIN master_routes mr2 ON mr2.id = lr2.master_route_id AND mr2.is_active = true
     WHERE mrs1_s.stop_order < mrs1_t.stop_order
       AND mrs2_t.stop_order < mrs2_d.stop_order
+      AND NOT (COALESCE(mr1.origin_city, '') = COALESCE(mr2.destination_city, '') AND COALESCE(mr1.destination_city, '') = COALESCE(mr2.origin_city, ''))
+      AND dl.dist_m < (
+           erm * 2 * ASIN(SQRT(
+               POWER(SIN(RADIANS((tl.latitude - $3)/2)),2) +
+               COS(RADIANS($3))*COS(RADIANS(tl.latitude))*
+               POWER(SIN(RADIANS((tl.longitude - $4)/2)),2)
+           ))
+      )
 ),
 
 transit_chains AS (
