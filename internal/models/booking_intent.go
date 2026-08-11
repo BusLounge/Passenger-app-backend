@@ -307,8 +307,8 @@ type BookingIntent struct {
 	PreLoungeFare     float64         `json:"pre_lounge_fare" db:"pre_lounge_fare"`
 	TransitLoungeFare float64         `json:"transit_lounge_fare" db:"transit_lounge_fare"`
 	PostLoungeFare    float64         `json:"post_lounge_fare" db:"post_lounge_fare"`
-	ReturnPreLoungeFare float64     `json:"return_pre_lounge_fare,omitempty" db:"-"`
-	ReturnPostLoungeFare float64    `json:"return_post_lounge_fare,omitempty" db:"-"`
+	ReturnPreLoungeFare float64     `json:"return_pre_lounge_fare,omitempty" db:"return_pre_lounge_fare"`
+	ReturnPostLoungeFare float64    `json:"return_post_lounge_fare,omitempty" db:"return_post_lounge_fare"`
 	TotalAmount       float64         `json:"total_amount" db:"total_amount"`
 	Currency          string          `json:"currency" db:"currency"`
 	PricingSnapshot   PricingSnapshot `json:"pricing_snapshot" db:"pricing_snapshot"`

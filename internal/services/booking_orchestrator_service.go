@@ -1451,7 +1451,11 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	}
 
 	// 2. Calculate additional lounge fares
-	var preLoungeFare, transitLoungeFare, postLoungeFare, returnPreLoungeFare, returnPostLoungeFare float64
+	preLoungeFare := intent.PreLoungeFare
+	transitLoungeFare := intent.TransitLoungeFare
+	postLoungeFare := intent.PostLoungeFare
+	returnPreLoungeFare := intent.ReturnPreLoungeFare
+	returnPostLoungeFare := intent.ReturnPostLoungeFare
 
 	if preTripLounge != nil {
 		loungeID, _ := uuid.Parse(preTripLounge.LoungeID)
@@ -1766,13 +1770,15 @@ func (s *BookingOrchestratorService) buildIntentResponse(intent *models.BookingI
 		IntentID: intent.ID,
 		Status:   string(intent.Status),
 		PriceBreakdown: models.PriceBreakdown{
-			BusFare:           intent.BusFare,
-			ReturnBusFare:     intent.PricingSnapshot.ReturnBusFare,
-			PreLoungeFare:     intent.PreLoungeFare,
-			TransitLoungeFare: intent.TransitLoungeFare,
-			PostLoungeFare:    intent.PostLoungeFare,
-			Total:             intent.TotalAmount,
-			Currency:          intent.Currency,
+			BusFare:              intent.BusFare,
+			ReturnBusFare:        intent.PricingSnapshot.ReturnBusFare,
+			PreLoungeFare:        intent.PreLoungeFare,
+			TransitLoungeFare:    intent.TransitLoungeFare,
+			PostLoungeFare:       intent.PostLoungeFare,
+			ReturnPreLoungeFare:  intent.ReturnPreLoungeFare,
+			ReturnPostLoungeFare: intent.ReturnPostLoungeFare,
+			Total:                intent.TotalAmount,
+			Currency:             intent.Currency,
 		},
 		ExpiresAt:                 intent.ExpiresAt,
 		TTLSeconds:                ttl,
