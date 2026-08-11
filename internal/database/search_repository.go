@@ -1612,6 +1612,7 @@ direct_results AS (
            s1.bus_owner_route_id AS l1_bus_owner_route_id,
            s1.trip_master_route_id AS l1_trip_master_id,
            NULL::text AS r2_route_name, NULL::text AS r2_route_number,
+           NULL::text AS r2_master_id,
            NULL::text AS r2_main_origin, NULL::text AS r2_main_destination,
            NULL::text AS l2_boarding, NULL::text AS l2_dropping,
            NULL::text AS l2_trip_id, NULL::text AS l2_schedule_name, NULL::timestamptz AS l2_dep,
@@ -1665,6 +1666,7 @@ transit_results AS (
            l1.has_refreshments AS l1_has_refreshments,
            NULL::text AS l1_bus_owner_route_id, tc.r1_id::text AS l1_trip_master_id,
            mr2.route_name AS r2_route_name, mr2.route_number AS r2_route_number,
+           tc.r2_id::text AS r2_master_id,
            mr2.origin_city AS r2_main_origin, mr2.destination_city AS r2_main_destination,
            b2s.stop_name AS l2_boarding, d2s.stop_name AS l2_dropping,
            l2.trip_id AS l2_trip_id, l2.schedule_name AS l2_schedule_name, l2.departure_time AS l2_dep,
@@ -1760,6 +1762,7 @@ LIMIT $7;
 		R1MainDestination  *string    `db:"r1_main_destination"`
 		R2RouteName        *string    `db:"r2_route_name"`
 		R2RouteNumber      *string    `db:"r2_route_number"`
+		R2MasterID         *string    `db:"r2_master_id"`
 		R2MainOrigin       *string    `db:"r2_main_origin"`
 		R2MainDestination  *string    `db:"r2_main_destination"`
 		L2Boarding         *string    `db:"l2_boarding"`
@@ -1866,6 +1869,7 @@ LIMIT $7;
 					HasEntertainment: row.L1HasEntertainment,
 					HasRefreshments:  row.L1HasRefreshments,
 				},
+				MasterRouteID:        &row.L1TripMasterID,
 				MainRouteOrigin:      row.R1MainOrigin,
 				MainRouteDestination: row.R1MainDestination,
 			}
@@ -1878,6 +1882,7 @@ LIMIT $7;
 				BusType: leg2BusType, DepartureTime: l2Dep, EstimatedArrival: l2Arr,
 				Fare: row.L2Fare, BoardingPoint: l2Boarding, DroppingPoint: l2Dropping,
 				IsBookable:           row.L2IsBookable,
+				MasterRouteID:        row.R2MasterID,
 				MainRouteOrigin:      row.R2MainOrigin,
 				MainRouteDestination: row.R2MainDestination,
 			}
