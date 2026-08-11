@@ -417,12 +417,12 @@ type CreateBookingIntentRequest struct {
 type BusIntentRequest struct {
 	ScheduledTripID   string                 `json:"scheduled_trip_id" binding:"required"`
 	BoardingStopID    *string                `json:"boarding_stop_id,omitempty"`
-	BoardingStopName  string                 `json:"boarding_stop_name" binding:"required"`
+	BoardingStopName  string                 `json:"boarding_stop_name"`
 	AlightingStopID   *string                `json:"alighting_stop_id,omitempty"`
-	AlightingStopName string                 `json:"alighting_stop_name" binding:"required"`
+	AlightingStopName string                 `json:"alighting_stop_name"`
 	Seats             []BusIntentSeatRequest `json:"seats" binding:"required,min=1"`
 	PassengerName     string                 `json:"passenger_name" binding:"required"`
-	PassengerPhone    string                 `json:"passenger_phone" binding:"required"`
+	PassengerPhone    string                 `json:"passenger_phone"`
 	PassengerEmail    *string                `json:"passenger_email,omitempty"`
 	SpecialRequests   *string                `json:"special_requests,omitempty"`
 	SearchFromLounge  *string                `json:"search_from_lounge,omitempty"`
