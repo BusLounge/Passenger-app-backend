@@ -599,6 +599,8 @@ func main() {
 			lounges.GET("/by-stop/:stopId", loungeHandler.GetLoungesByStop)
 			logger.Info("  ✅ GET /api/v1/lounges/by-route/:routeId (public)")
 			lounges.GET("/by-route/:routeId", loungeHandler.GetLoungesByRoute)
+			logger.Info("  ✅ GET /api/v1/lounges/by-multiple-routes (public)")
+			lounges.GET("/by-multiple-routes", loungeHandler.GetLoungesByMultipleRoutes)
 			logger.Info("  ✅ GET /api/v1/lounges/near-stop/:routeId/:stopId (public)")
 			lounges.GET("/near-stop/:routeId/:stopId", loungeHandler.GetLoungesNearStop)
 			// Using the 'near-stop' pattern to bypass Choreo gateway restrictions
