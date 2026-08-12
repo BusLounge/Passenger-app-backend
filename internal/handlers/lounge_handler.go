@@ -1019,6 +1019,120 @@ func (h *LoungeHandler) GetLoungesByRoute(c *gin.Context) {
 	})
 }
 
+// GetLoungesByRouteNear handles GET /api/v1/lounges/by-route-near
+// @Summary Get lounges that serve a specific route and are within a GPS radius
+// @Description Returns active lounges registered on the route (via lounge_routes) AND within radiusMeters of the given lat/lng. Ordered nearest-first.
+// @Tags Lounges
+// @Produce json
+// @Param routeId query string true  "Master Route ID (UUID)"
+// @Param lat     query number true  "Latitude of search point"
+// @Param lng     query number true  "Longitude of search point"
+// @Param radius  query number false "Search radius in metres (default 20000)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /lounges/by-route-near [get]
+func (h *LoungeHandler) GetLoungesByRouteNear(c *gin.Context) {
+	routeIDStr := c.Query("routeId")
+	if routeIDStr == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "missing_param",
+			Message: "routeId query parameter is required",
+		})
+		return
+	}
+	routeID, err := uuid.Parse(routeIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "invalid_param",
+			Message: "routeId must be a valid UUID",
+		})
+		return
+	}
+
+	var lat, lng float64
+	if _, err := fmt.Sscanf(c.Query("lat"), "%f", &lat); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "invalid_param",
+			Message: "lat must be a valid float",
+		})
+		return
+	}
+	if _, err := fmt.Sscanf(c.Query("lng"), "%f", &lng); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "invalid_param",
+			Message: "lng must be a valid float",
+		})
+		return
+	}
+
+	radius := 20000.0 // default 20 km
+	if r := c.Query("radius"); r != "" {
+		fmt.Sscanf(r, "%f", &radius)
+	}
+
+	log.Printf("GetLoungesByRouteNear: route=%s lat=%.4f lng=%.4f radius=%.0fm", routeID, lat, lng, radius)
+
+	lounges, err := h.loungeRepo.GetLoungesByRouteNearLocation(routeID, lat, lng, radius)
+	if err != nil {
+		log.Printf("ERROR: GetLoungesByRouteNear: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "database_error",
+			Message: "Failed to retrieve lounges",
+		})
+		return
+	}
+
+	response := make([]gin.H, 0, len(lounges))
+	for _, lounge := range lounges {
+		var amenities []string
+		if len(lounge.Amenities) > 0 {
+			json.Unmarshal(lounge.Amenities, &amenities)
+		}
+		if amenities == nil {
+			amenities = []string{}
+		}
+		var images []string
+		if len(lounge.Images) > 0 {
+			json.Unmarshal(lounge.Images, &images)
+		}
+		if images == nil {
+			images = []string{}
+		}
+		response = append(response, gin.H{
+			"id":              lounge.ID,
+			"lounge_owner_id": lounge.LoungeOwnerID,
+			"lounge_name":     lounge.LoungeName,
+			"description":     lounge.Description.String,
+			"address":         lounge.Address,
+			"contact_phone":   lounge.ContactPhone.String,
+			"latitude":        lounge.Latitude.String,
+			"longitude":       lounge.Longitude.String,
+			"capacity":        lounge.Capacity.Int64,
+			"price_1_hour":    lounge.Price1Hour.String,
+			"price_2_hours":   lounge.Price2Hours.String,
+			"price_3_hours":   lounge.Price3Hours.String,
+			"price_until_bus": lounge.PriceUntilBus.String,
+			"status":          lounge.Status,
+			"is_operational":  lounge.IsOperational,
+			"amenities":       amenities,
+			"images":          images,
+			"average_rating":  lounge.AverageRating.String,
+			"state":           lounge.State.String,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"lounges":   response,
+		"route_id":  routeID,
+		"latitude":  lat,
+		"longitude": lng,
+		"radius_m":  radius,
+		"total":     len(response),
+	})
+}
+
+
 // GetLoungesNearStop handles GET /api/v1/lounges/near-stop/:routeId/:stopId
 // @Summary Get lounges near a passenger's selected stop
 // @Description Returns all active lounges where the passenger's stop is within 2 stops of the lounge's location
