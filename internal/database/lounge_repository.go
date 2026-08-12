@@ -363,6 +363,68 @@ func (r *LoungeRepository) GetLoungesByMultipleRouteIDs(routeIDs []uuid.UUID) ([
 	return lounges, nil
 }
 
+// GetLoungesByRouteNearLocation retrieves active lounges that:
+//  1. Are registered on [routeID] via lounge_routes (route support check), AND
+//  2. Are within [radiusMeters] of the given GPS coordinates (Haversine proximity).
+//
+// Results are ordered nearest-first so the caller can take the top-N without
+// additional sorting. This is the primary endpoint for Fix 3 (Kaduwela lounges
+// not showing) because it avoids the name-match bottleneck entirely.
+func (r *LoungeRepository) GetLoungesByRouteNearLocation(
+	routeID uuid.UUID,
+	lat, lng float64,
+	radiusMeters float64,
+) ([]models.Lounge, error) {
+	const query = `
+		WITH haversine AS (SELECT 6371000.0 AS erm)
+		SELECT DISTINCT
+		       l.id, l.lounge_owner_id, l.lounge_name, l.description, l.address, l.state, l.country,
+		       l.postal_code, l.latitude, l.longitude, l.contact_phone, l.capacity,
+		       l.price_1_hour, l.price_2_hours, l.price_3_hours, l.price_until_bus,
+		       l.amenities, l.images, l.status, l.is_operational, l.average_rating,
+		       l.created_at, l.updated_at,
+		       -- Haversine distance in metres (used for ORDER BY; not returned as column)
+		       erm * 2 * ASIN(SQRT(
+		           POWER(SIN(RADIANS((l.latitude::double precision - $2) / 2)), 2) +
+		           COS(RADIANS($2)) * COS(RADIANS(l.latitude::double precision)) *
+		           POWER(SIN(RADIANS((l.longitude::double precision - $3) / 2)), 2)
+		       )) AS dist_m
+		FROM lounges l
+		CROSS JOIN haversine
+		INNER JOIN lounge_routes lr ON lr.lounge_id = l.id AND lr.master_route_id = $1
+		WHERE l.status      = 'approved'
+		  AND l.is_operational = true
+		  AND l.latitude  IS NOT NULL
+		  AND l.longitude IS NOT NULL
+		  -- Haversine distance gate
+		  AND erm * 2 * ASIN(SQRT(
+		          POWER(SIN(RADIANS((l.latitude::double precision - $2) / 2)), 2) +
+		          COS(RADIANS($2)) * COS(RADIANS(l.latitude::double precision)) *
+		          POWER(SIN(RADIANS((l.longitude::double precision - $3) / 2)), 2)
+		      )) <= $4
+		ORDER BY dist_m ASC
+	`
+
+	// We need a custom scan type because dist_m is an extra computed column
+	type loungeWithDist struct {
+		models.Lounge
+		DistM float64 `db:"dist_m"`
+	}
+
+	var rows []loungeWithDist
+	if err := r.db.Select(&rows, query, routeID, lat, lng, radiusMeters); err != nil {
+		return nil, fmt.Errorf("GetLoungesByRouteNearLocation: %w", err)
+	}
+
+	lounges := make([]models.Lounge, len(rows))
+	for i, row := range rows {
+		lounges[i] = row.Lounge
+	}
+	return lounges, nil
+}
+
+
+
 
 
 // GetLoungesNearStop retrieves lounges where passenger's stop is within N stops of the lounge's location
