@@ -191,8 +191,10 @@ func (s *BookingOrchestratorService) CreateIntent(
 		intent.PostLoungeFare = loungeFare
 	}
 
-	// 7. Calculate totals
-	intent.TotalAmount = intent.BusFare + intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare
+	// 7. Calculate totals (include returnBusFare + all return lounge fares)
+	intent.TotalAmount = intent.BusFare + returnBusFare +
+		intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare +
+		returnPreLoungeFare + returnPostLoungeFare
 	intent.PricingSnapshot = models.PricingSnapshot{
 		BusFare:              intent.BusFare,
 		ReturnBusFare:        returnBusFare,
