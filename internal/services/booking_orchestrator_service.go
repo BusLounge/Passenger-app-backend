@@ -194,7 +194,7 @@ func (s *BookingOrchestratorService) CreateIntent(
 	// 7. Calculate totals
 	// Note: intent.BusFare already includes returnBusFare.
 	// intent.PreLoungeFare and intent.PostLoungeFare already include their respective return lounge fares.
-	intent.TotalAmount = intent.BusFare + intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare
+	intent.TotalAmount = intent.BusFare + intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare + intent.ReturnPreLoungeFare + intent.ReturnPostLoungeFare
 	intent.PricingSnapshot = models.PricingSnapshot{
 		BusFare:              intent.BusFare,
 		ReturnBusFare:        returnBusFare,
@@ -1644,7 +1644,7 @@ s.intentRepo.CreateLoungeCapacityHold(hold)
 }
 
 // 3. Update intent with lounge data
-	newTotal := intent.BusFare + intent.PricingSnapshot.ReturnBusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
+	newTotal := intent.BusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
 	newExpiresAt := time.Now().Add(s.config.IntentTTL) // Extend the hold timer
 
 	s.logger.WithFields(logrus.Fields{
@@ -1655,8 +1655,21 @@ s.intentRepo.CreateLoungeCapacityHold(hold)
 		"pre_lounge_fare":     preLoungeFare,
 		"transit_lounge_fare": transitLoungeFare,
 		"post_lounge_fare":    postLoungeFare,
-		"new_total":           newTotal,
 	}).Info("AddLoungeToIntent: Saving lounge data to intent")
+
+	// 3. Build new pricing snapshot
+	intent.PricingSnapshot.Total = newTotal
+	intent.PricingSnapshot.PreLoungeFare = preLoungeFare
+	intent.PricingSnapshot.TransitLoungeFare = transitLoungeFare
+	intent.PricingSnapshot.PostLoungeFare = postLoungeFare
+	intent.PricingSnapshot.ReturnPreLoungeFare = returnPreLoungeFare
+	intent.PricingSnapshot.ReturnPostLoungeFare = returnPostLoungeFare
+	intent.PricingSnapshot.CalculatedAt = time.Now()
+
+	pricingBytes, err := json.Marshal(intent.PricingSnapshot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pricing snapshot: %w", err)
+	}
 
 	err = s.intentRepo.AddLoungeToIntent(
 		intent.ID,
@@ -1672,6 +1685,7 @@ s.intentRepo.CreateLoungeCapacityHold(hold)
 		returnPostLoungeFare,
 		newTotal,
 		newExpiresAt,
+		string(pricingBytes),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update intent with lounges: %w", err)

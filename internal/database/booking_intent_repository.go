@@ -439,6 +439,7 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 	returnPostLoungeFare float64,
 	newTotal float64,
 	newExpiresAt time.Time,
+	pricingSnapshotJSON string,
 ) error {
 	// Convert lounge payloads to JSON - use *string to properly handle JSONB
 	var preLoungeJSON, transitLoungeJSON, postLoungeJSON, returnPreLoungeJSON, returnPostLoungeJSON *string
@@ -508,6 +509,7 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		    return_post_lounge_fare = CASE WHEN $14 > 0 THEN $14 ELSE return_post_lounge_fare END,
 		    total_amount = $9,
 		    expires_at = $10,
+		    pricing_snapshot = $15,
 		    updated_at = NOW()
 		WHERE id = $1 AND status = 'held'`
 
@@ -526,6 +528,7 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		returnPostLoungeJSON,
 		returnPreLoungeFare,
 		returnPostLoungeFare,
+		pricingSnapshotJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update intent: %w", err)
