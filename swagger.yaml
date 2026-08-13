@@ -8428,6 +8428,16 @@ paths:
             type: string
             format: uuid
           description: Booking intent ID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: number
+                  description: Optional override amount for the total payment
       responses:
         "200":
           description: Payment initiated successfully
