@@ -560,6 +560,7 @@ func (s *BookingOrchestratorService) createLoungeHold(
 func (s *BookingOrchestratorService) InitiatePayment(
 	intentID uuid.UUID,
 	userID uuid.UUID,
+	overrideAmount *float64,
 ) (*models.InitiatePaymentResponse, error) {
 	// 1. Get intent
 	intent, err := s.intentRepo.GetIntentByID(intentID)
@@ -585,7 +586,17 @@ func (s *BookingOrchestratorService) InitiatePayment(
 
 	// 4. Generate payment reference (using intent ID as invoice ID)
 	paymentRef := fmt.Sprintf("INT-%s", intent.ID.String()[:8])
-	amountStr := fmt.Sprintf("%.2f", intent.TotalAmount)
+	
+	finalAmount := intent.TotalAmount
+	if overrideAmount != nil && *overrideAmount != intent.TotalAmount {
+		finalAmount = *overrideAmount
+		if err := s.intentRepo.UpdateIntentAmount(intent.ID, finalAmount); err != nil {
+			s.logger.WithError(err).Warn("Failed to update intent total amount")
+		}
+		// Update the local instance for subsequent usage (like logging)
+		intent.TotalAmount = finalAmount
+	}
+	amountStr := fmt.Sprintf("%.2f", finalAmount)
 
 	// 5. Update intent to payment_pending
 	if err := s.intentRepo.UpdateIntentPaymentPending(intent.ID, paymentRef); err != nil {
@@ -949,10 +960,9 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 
 	// Determine booking type based on lounge intents
 	bookingType := models.BookingTypeBusOnly
-	totalAmount := intent.BusFare
+	totalAmount := intent.TotalAmount
 	if intent.PreTripLoungeIntent != nil || intent.TransitLoungeIntent != nil || intent.PostTripLoungeIntent != nil {
 		bookingType = models.BookingTypeBusWithLounge
-		totalAmount = intent.TotalAmount
 	}
 
 	loungeTotal := 0.0

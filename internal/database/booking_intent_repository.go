@@ -281,6 +281,13 @@ func (r *BookingIntentRepository) GetIntentsByUserID(userID uuid.UUID, limit, of
 	return intents, nil
 }
 
+// UpdateIntentAmount updates the total amount of an intent
+func (r *BookingIntentRepository) UpdateIntentAmount(intentID uuid.UUID, totalAmount float64) error {
+	query := `UPDATE booking_intents SET total_amount = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Exec(query, intentID, totalAmount)
+	return err
+}
+
 // ============================================================================
 // STATUS UPDATE OPERATIONS
 // ============================================================================

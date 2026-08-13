@@ -131,8 +131,15 @@ func (h *BookingOrchestratorHandler) InitiatePayment(c *gin.Context) {
 		return
 	}
 
+	// Parse optional amount override
+	var req struct {
+		Amount *float64 `json:"amount"`
+	}
+	// We use ShouldBindJSON but ignore errors because it's optional
+	c.ShouldBindJSON(&req)
+
 	// Initiate payment
-	response, err := h.orchestratorService.InitiatePayment(intentID, userID)
+	response, err := h.orchestratorService.InitiatePayment(intentID, userID, req.Amount)
 	if err != nil {
 		if err.Error() == "intent not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
