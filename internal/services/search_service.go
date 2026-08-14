@@ -109,6 +109,23 @@ func (s *SearchService) SearchTrips(
 			}
 
 			if len(results) > 0 {
+				// Strict Pair Limitation: lock the result card to the SINGLE closest origin lounge and SINGLE closest destination lounge found at this earliest valid radius tier.
+				// Since the SQL query sorts by direct vs transit, then start_dist_m ASC, drop_dist_m ASC,
+				// results[0] is guaranteed to be the closest valid pair.
+				bestFrom := results[0].FromLounge
+				bestTo := results[0].ToLounge
+
+				var filtered []models.TripResult
+				for _, r := range results {
+					fromMatch := (bestFrom == nil && r.FromLounge == nil) || (bestFrom != nil && r.FromLounge != nil && *bestFrom == *r.FromLounge)
+					toMatch := (bestTo == nil && r.ToLounge == nil) || (bestTo != nil && r.ToLounge != nil && *bestTo == *r.ToLounge)
+					
+					if fromMatch && toMatch {
+						filtered = append(filtered, r)
+					}
+				}
+				results = filtered
+
 				directCount, transitCount := 0, 0
 				for _, r := range results {
 					if r.IsTransit {
