@@ -52,7 +52,7 @@ func (h *StaffBookingHandler) VerifyBookingByQR(c *gin.Context) {
 		return
 	}
 
-	busBooking, err := h.bookingRepo.GetBusBookingByQRCode(req.QRCode)
+	masterBooking, err := h.bookingRepo.GetBookingByQR(req.QRCode)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Booking not found"})
@@ -61,6 +61,14 @@ func (h *StaffBookingHandler) VerifyBookingByQR(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify booking"})
 		return
 	}
+
+	if len(masterBooking.BusBookings) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Booking has no bus segments"})
+		return
+	}
+
+	// For backward compatibility with legacy staff apps, populate root fields using the first bus booking.
+	busBooking := masterBooking.BusBookings[0]
 
 	c.JSON(http.StatusOK, gin.H{
 		"valid":              true,
@@ -74,6 +82,9 @@ func (h *StaffBookingHandler) VerifyBookingByQR(c *gin.Context) {
 		"is_checked_in":      busBooking.CheckedInAt != nil,
 		"check_in_time":      busBooking.CheckedInAt,
 		"seats":              busBooking.Seats,
+		"master_booking_id":  masterBooking.ID,
+		"booking_reference":  masterBooking.BookingReference,
+		"all_segments":       masterBooking.BusBookings,
 	})
 }
 

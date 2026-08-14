@@ -165,6 +165,10 @@ type MasterBooking struct {
 	DeviceInfo       DeviceInfo    `json:"device_info,omitempty" db:"device_info"`
 	Notes            *string       `json:"notes,omitempty" db:"notes"`
 
+	// QR Code
+	QRCodeData    *string    `json:"qr_code_data,omitempty" db:"qr_code_data"`
+	QRGeneratedAt *time.Time `json:"qr_generated_at,omitempty" db:"qr_generated_at"`
+
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 

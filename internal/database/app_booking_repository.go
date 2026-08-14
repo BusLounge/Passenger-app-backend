@@ -2,6 +2,7 @@ package database
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -77,8 +78,9 @@ func (r *AppBookingRepository) GenerateBookingReference() (string, error) {
 
 // GenerateBusBookingQR generates a unique QR code for bus booking
 // Format: QR-YYYYMMDDHHMMSS-XXXXXXXX (8 char alphanumeric)
+// GenerateMasterBookingQR generates a unique QR code string for a master booking
 // Example: QR-20251206143022-A1B2C3D4
-func (r *AppBookingRepository) GenerateBusBookingQR() (string, error) {
+func (r *AppBookingRepository) GenerateMasterBookingQR() (string, error) {
 	for attempts := 0; attempts < 10; attempts++ {
 		// Generate 8 random bytes and take first 8 hex chars
 		randomBytes := make([]byte, 4)
@@ -92,7 +94,7 @@ func (r *AppBookingRepository) GenerateBusBookingQR() (string, error) {
 
 		// Check if exists
 		var count int
-		err := r.db.Get(&count, `SELECT COUNT(*) FROM bus_bookings WHERE qr_code_data = $1`, qrData)
+		err := r.db.Get(&count, `SELECT COUNT(*) FROM bookings WHERE qr_code_data = $1`, qrData)
 		if err != nil {
 			return "", fmt.Errorf("failed to check QR uniqueness: %w", err)
 		}
@@ -148,11 +150,21 @@ func (r *AppBookingRepository) CreateBooking(
 			payment_status, payment_method, booking_status,
 			passenger_name, passenger_phone, passenger_email,
 			booking_source, device_info, notes,
-			search_from_lounge, search_to_lounge
+			search_from_lounge, search_to_lounge,
+			qr_code_data, qr_generated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
+			$26, $27
 		) RETURNING id, created_at, updated_at`
+
+	masterQRCode, err := r.GenerateMasterBookingQR()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate master QR code: %w", err)
+	}
+	booking.QRCodeData = &masterQRCode
+	now := time.Now()
+	booking.QRGeneratedAt = &now
 
 	err = tx.QueryRowx(bookingQuery,
 		booking.BookingReference, booking.UserID, booking.BookingType,
@@ -163,6 +175,7 @@ func (r *AppBookingRepository) CreateBooking(
 		booking.PassengerName, booking.PassengerPhone, booking.PassengerEmail,
 		booking.BookingSource, deviceInfoJSON, booking.Notes,
 		booking.SearchFromLounge, booking.SearchToLounge,
+		booking.QRCodeData, booking.QRGeneratedAt,
 	).Scan(&booking.ID, &booking.CreatedAt, &booking.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create booking: %w", err)
@@ -174,16 +187,12 @@ func (r *AppBookingRepository) CreateBooking(
 	for idx, busBooking := range busBookings {
 		seats := multipleSeats[idx]
 
-		qrCode, err := r.GenerateBusBookingQR()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate QR code: %w", err)
-		}
 		if idx == 0 {
-			firstQRCode = qrCode
+			firstQRCode = masterQRCode
 		}
-		busBooking.QRCodeData = &qrCode
-		now := time.Now()
-		busBooking.QRGeneratedAt = &now
+		// Do not generate individual QR for new bus bookings, they derive from the master booking
+		busBooking.QRCodeData = nil
+		busBooking.QRGeneratedAt = nil
 
 		busBooking.BookingID = booking.ID
 
@@ -287,7 +296,8 @@ func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterB
 		       booking_status, passenger_name, passenger_phone, passenger_email,
 		       confirmed_at, cancelled_at, cancellation_reason, cancelled_by_user_id,
 		       completed_at, refund_amount, refund_reference, refunded_at,
-		       booking_source, device_info, notes, search_from_lounge, search_to_lounge, created_at, updated_at
+		       booking_source, device_info, notes, search_from_lounge, search_to_lounge,
+		       qr_code_data, qr_generated_at, created_at, updated_at
 		FROM bookings WHERE id = $1`
 
 	err := r.db.Get(booking, query, bookingID)
@@ -341,7 +351,8 @@ func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.
 		       booking_status, passenger_name, passenger_phone, passenger_email,
 		       confirmed_at, cancelled_at, cancellation_reason, cancelled_by_user_id,
 		       completed_at, refund_amount, refund_reference, refunded_at,
-		       booking_source, device_info, notes, search_from_lounge, search_to_lounge, created_at, updated_at
+		       booking_source, device_info, notes, search_from_lounge, search_to_lounge,
+		       qr_code_data, qr_generated_at, created_at, updated_at
 		FROM bookings WHERE booking_reference = $1`
 
 	err := r.db.Get(booking, query, reference)
@@ -378,7 +389,8 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -389,6 +401,8 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		ORDER BY b.created_at DESC
 		LIMIT $2 OFFSET $3`
@@ -406,7 +420,8 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -417,6 +432,8 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
 		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
 		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
@@ -436,7 +453,8 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -447,6 +465,8 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND (
 			b.booking_status = 'completed'
@@ -469,7 +489,8 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -480,6 +501,8 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('completed')
 		  AND (bb.status IS NULL OR bb.status NOT IN ('completed'))
@@ -505,7 +528,8 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -516,6 +540,8 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
 		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
 		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
@@ -710,7 +736,26 @@ func (r *AppBookingRepository) GetBusBookingByBookingID(bookingID string) (*mode
 	return busBooking, nil
 }
 
-// GetBusBookingByQRCode retrieves bus booking by QR code
+// GetBookingByQR retrieves a master booking by QR code
+// It first checks the bookings table, then falls back to bus_bookings for backward compatibility
+func (r *AppBookingRepository) GetBookingByQR(qrCode string) (*models.MasterBooking, error) {
+	var bookingID string
+	err := r.db.Get(&bookingID, `SELECT id FROM bookings WHERE qr_code_data = $1`, qrCode)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Fallback to legacy bus_bookings table
+			err = r.db.Get(&bookingID, `SELECT booking_id FROM bus_bookings WHERE qr_code_data = $1 LIMIT 1`, qrCode)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+	return r.GetBookingByID(bookingID)
+}
+
+// GetBusBookingByQRCode retrieves a specific bus booking by QR code
 func (r *AppBookingRepository) GetBusBookingByQRCode(qrCode string) (*models.BusBooking, error) {
 	busBooking := &models.BusBooking{}
 	query := `
