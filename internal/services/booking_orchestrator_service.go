@@ -583,8 +583,9 @@ func (s *BookingOrchestratorService) InitiatePayment(
 		}
 		return nil, fmt.Errorf("intent is not in valid state for payment (status: %s)", intent.Status)
 	}
-	// 4. Generate payment reference (using intent ID and timestamp to ensure uniqueness when amount changes)
-	paymentRef := fmt.Sprintf("INT-%s-%d", intent.ID.String()[:8], time.Now().Unix())
+	// 4. Generate payment reference (max 20 chars for PAYable).
+	// Format: "IN-" + 6 chars of UUID + "-" + 10 chars Unix timestamp = 19 chars max
+	paymentRef := fmt.Sprintf("IN-%s-%d", intent.ID.String()[:6], time.Now().Unix())
 	
 	finalAmount := intent.TotalAmount
 	if overrideAmount != nil && *overrideAmount != intent.TotalAmount {
