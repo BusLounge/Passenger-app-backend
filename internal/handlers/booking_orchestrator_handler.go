@@ -131,15 +131,23 @@ func (h *BookingOrchestratorHandler) InitiatePayment(c *gin.Context) {
 		return
 	}
 
-	// Parse optional amount override
+	// Parse optional amount override safely
+	var amountOverride *float64
 	var req struct {
 		Amount *float64 `json:"amount"`
 	}
-	// We use ShouldBindJSON but ignore errors because it's optional
-	c.ShouldBindJSON(&req)
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("InitiatePayment: Failed to parse body for amount override, continuing without override.")
+	} else if req.Amount != nil {
+		amountOverride = req.Amount
+		h.logger.Infof("InitiatePayment: Successfully parsed override amount: %f", *amountOverride)
+	} else {
+		h.logger.Info("InitiatePayment: Body parsed successfully, but no amount provided.")
+	}
 
 	// Initiate payment
-	response, err := h.orchestratorService.InitiatePayment(intentID, userID, req.Amount)
+	response, err := h.orchestratorService.InitiatePayment(intentID, userID, amountOverride)
 	if err != nil {
 		if err.Error() == "intent not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

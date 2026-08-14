@@ -583,9 +583,8 @@ func (s *BookingOrchestratorService) InitiatePayment(
 		}
 		return nil, fmt.Errorf("intent is not in valid state for payment (status: %s)", intent.Status)
 	}
-
-	// 4. Generate payment reference (using intent ID as invoice ID)
-	paymentRef := fmt.Sprintf("INT-%s", intent.ID.String()[:8])
+	// 4. Generate payment reference (using intent ID and timestamp to ensure uniqueness when amount changes)
+	paymentRef := fmt.Sprintf("INT-%s-%d", intent.ID.String()[:8], time.Now().Unix())
 	
 	finalAmount := intent.TotalAmount
 	if overrideAmount != nil && *overrideAmount != intent.TotalAmount {
@@ -599,8 +598,9 @@ func (s *BookingOrchestratorService) InitiatePayment(
 	amountStr := fmt.Sprintf("%.2f", finalAmount)
 
 	// 5. Update intent to payment_pending
+	// This will update the status to payment_pending if it's currently held OR payment_pending
 	if err := s.intentRepo.UpdateIntentPaymentPending(intent.ID, paymentRef); err != nil {
-		return nil, fmt.Errorf("failed to update intent: %w", err)
+		return nil, fmt.Errorf("failed to update intent payment pending: %w", err)
 	}
 
 	// 6. Build payment response
