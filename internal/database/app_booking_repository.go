@@ -429,11 +429,17 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
 		  AND (bb.status IS NULL OR bb.status NOT IN ('cancelled', 'completed', 'no_show'))
-		  AND COALESCE(
+		  AND (
+			  COALESCE(
 				st.departure_datetime,
-				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id),
-				b.created_at
-			  ) > NOW() AT TIME ZONE 'Asia/Colombo'
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			  ) IS NULL
+			  OR
+			  COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			  ) > NOW() AT TIME ZONE 'Asia/Colombo' - INTERVAL '24 hours'
+		  )
 		ORDER BY departure_datetime ASC
 		LIMIT $2 OFFSET $3`
 
