@@ -376,8 +376,10 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 	query := `
 		SELECT 
 			b.id, b.booking_reference, b.booking_type,
-			b.total_amount, b.payment_status, b.booking_status,
-			b.passenger_name, b.created_at,
+			COALESCE(b.total_amount, 0) as total_amount, 
+			COALESCE(b.payment_status, 'pending') as payment_status, 
+			COALESCE(b.booking_status, 'pending') as booking_status,
+			COALESCE(b.passenger_name, '') as passenger_name, b.created_at,
 			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
 			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
