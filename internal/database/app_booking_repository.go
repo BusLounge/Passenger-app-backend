@@ -412,22 +412,29 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
 			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
-		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
+		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
+		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
 		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
 		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
-		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
-		  AND st.departure_datetime > NOW() AT TIME ZONE 'Asia/Colombo'
-		ORDER BY st.departure_datetime ASC
+		  AND (bb.status IS NULL OR bb.status NOT IN ('cancelled', 'completed', 'no_show'))
+		  AND COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id),
+				b.created_at
+			  ) > NOW() AT TIME ZONE 'Asia/Colombo'
+		ORDER BY departure_datetime ASC
 		LIMIT $2 OFFSET $3`
 
 	var bookings []models.BookingListItem
@@ -445,7 +452,10 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
 			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
@@ -460,6 +470,7 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 		  AND (
 			b.booking_status = 'completed'
 			OR bb.status = 'completed'
+			OR (b.booking_type = 'lounge_only' AND EXISTS(SELECT 1 FROM lounge_bookings lb WHERE lb.master_booking_id = b.id AND lb.status = 'completed'))
 		  )
 		ORDER BY b.created_at DESC
 		LIMIT $2 OFFSET $3`
@@ -481,7 +492,10 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 			COALESCE(lf.name, b.search_from_lounge) as search_from_lounge, 
 			COALESCE(lt.name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
