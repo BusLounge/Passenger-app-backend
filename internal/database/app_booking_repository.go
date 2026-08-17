@@ -534,6 +534,12 @@ func (r *AppBookingRepository) UpdatePaymentStatus(
 	status models.MasterPaymentStatus,
 	method, reference, gateway *string,
 ) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	query := `
 		UPDATE bookings 
 		SET payment_status = $1,
@@ -544,10 +550,28 @@ func (r *AppBookingRepository) UpdatePaymentStatus(
 		    confirmed_at = CASE WHEN $1 = 'paid' THEN COALESCE(confirmed_at, NOW()) ELSE confirmed_at END,
 		    booking_status = CASE WHEN $1 = 'paid' THEN 'confirmed' ELSE booking_status END,
 		    updated_at = NOW()
-		WHERE id = $5`
+		WHERE id = $5
+		RETURNING user_id, total_amount`
 
-	_, err := r.db.Exec(query, status, method, reference, gateway, bookingID)
-	return err
+	var userID string
+	var totalAmount float64
+	err = tx.QueryRow(query, status, method, reference, gateway, bookingID).Scan(&userID, &totalAmount)
+	if err != nil {
+		return err
+	}
+
+	if status == "paid" {
+		loyaltyQuery := `
+			INSERT INTO passenger_loyalty_ledger (user_id, booking_id, points)
+			VALUES ($1, $2, CAST($3 AS INT) / 100)
+			ON CONFLICT (booking_id) DO NOTHING`
+		_, err = tx.Exec(loyaltyQuery, userID, bookingID, totalAmount)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 // CancelBooking cancels a booking and releases seats
