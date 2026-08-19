@@ -56,8 +56,7 @@ func (r *AppBookingRepository) GenerateBookingReference() (string, error) {
 		if _, err := rand.Read(randomBytes); err != nil {
 			return "", fmt.Errorf("failed to generate random bytes: %w", err)
 		}
-		randomStr := strings.ToUpper(h
-			ex.EncodeToString(randomBytes))
+		randomStr := strings.ToUpper(hex.EncodeToString(randomBytes))
 
 		newRef := fmt.Sprintf("BL-%s-%s", todayStr, randomStr)
 
