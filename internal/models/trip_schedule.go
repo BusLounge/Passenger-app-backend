@@ -437,7 +437,10 @@ func CalculateDurationMinutes(departureTimeStr string, arrivalTimeStr string, is
 		}
 	}
 
-	// Validate duration (must be positive and reasonable)
+	// Validate duration (must be positive
+	// 
+	// 
+	//  and reasonable)
 	if duration <= 0 {
 		return 0, errors.New("trip duration must be positive")
 	}
