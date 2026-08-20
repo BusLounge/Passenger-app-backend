@@ -131,23 +131,8 @@ func (h *BookingOrchestratorHandler) InitiatePayment(c *gin.Context) {
 		return
 	}
 
-	// Parse optional amount override safely
-	var amountOverride *float64
-	var req struct {
-		Amount *float64 `json:"amount"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.WithError(err).Warn("InitiatePayment: Failed to parse body for amount override, continuing without override.")
-	} else if req.Amount != nil {
-		amountOverride = req.Amount
-		h.logger.Infof("InitiatePayment: Successfully parsed override amount: %f", *amountOverride)
-	} else {
-		h.logger.Info("InitiatePayment: Body parsed successfully, but no amount provided.")
-	}
-
 	// Initiate payment
-	response, err := h.orchestratorService.InitiatePayment(intentID, userID, amountOverride)
+	response, err := h.orchestratorService.InitiatePayment(intentID, userID)
 	if err != nil {
 		if err.Error() == "intent not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -346,11 +331,9 @@ func (h *BookingOrchestratorHandler) CancelIntent(c *gin.Context) {
 
 // AddLoungeToIntentRequest represents the request to add lounges to an existing intent
 type AddLoungeToIntentRequest struct {
-	PreTripLounge        *models.LoungeIntentPayload `json:"pre_trip_lounge,omitempty"`
-	TransitLounge        *models.LoungeIntentPayload `json:"transit_lounge,omitempty"`
-	PostTripLounge       *models.LoungeIntentPayload `json:"post_trip_lounge,omitempty"`
-	ReturnPreTripLounge  *models.LoungeIntentPayload `json:"return_pre_trip_lounge,omitempty"`
-	ReturnPostTripLounge *models.LoungeIntentPayload `json:"return_post_trip_lounge,omitempty"`
+	PreTripLounge  *models.LoungeIntentPayload `json:"pre_trip_lounge,omitempty"`
+	TransitLounge  *models.LoungeIntentPayload `json:"transit_lounge,omitempty"`
+	PostTripLounge *models.LoungeIntentPayload `json:"post_trip_lounge,omitempty"`
 }
 
 // AddLoungeToIntent adds pre-trip and/or post-trip lounge to an existing bus intent
@@ -394,13 +377,13 @@ func (h *BookingOrchestratorHandler) AddLoungeToIntent(c *gin.Context) {
 	}
 
 	// Validate at least one lounge is provided
-	if req.PreTripLounge == nil && req.TransitLounge == nil && req.PostTripLounge == nil && req.ReturnPreTripLounge == nil && req.ReturnPostTripLounge == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one lounge must be provided"})
+	if req.PreTripLounge == nil && req.TransitLounge == nil && req.PostTripLounge == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one lounge (pre_trip_lounge, transit_lounge, or post_trip_lounge) must be provided"})
 		return
 	}
 
 	// Add lounges to intent
-	response, err := h.orchestratorService.AddLoungeToIntent(intentID, userID, req.PreTripLounge, req.TransitLounge, req.PostTripLounge, req.ReturnPreTripLounge, req.ReturnPostTripLounge)
+	response, err := h.orchestratorService.AddLoungeToIntent(intentID, userID, req.PreTripLounge, req.TransitLounge, req.PostTripLounge)
 	if err != nil {
 		errMsg := err.Error()
 		if errMsg == "intent not found" {

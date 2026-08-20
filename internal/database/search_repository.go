@@ -584,9 +584,8 @@ func (r *SearchRepository) FindDirectTrips(
 			-- Trip must be bookable and in valid status
 			st.is_bookable = true
 			AND st.status IN ('scheduled', 'confirmed')
-			-- Departure must be in the future (or strictly bounded to the requested date)
+			-- Departure must be in the future
 			AND st.departure_datetime > ($3 AT TIME ZONE 'Asia/Colombo')
-			AND st.departure_datetime::date = ($3 AT TIME ZONE 'Asia/Colombo')::date
 			-- Stops must be in correct order
 			AND check_from.stop_order < check_to.stop_order
 			-- For bus owner routes, check if stops are selected
@@ -1368,8 +1367,7 @@ JOIN LATERAL (
     WHERE COALESCE(bor.master_route_id, rp.master_route_id) = mr_data.master_route_id
       AND st.is_bookable = true
       AND st.status IN ('scheduled', 'confirmed')
-      AND st.departure_datetime > ($6 AT TIME ZONE 'Asia/Colombo')
-      AND st.departure_datetime::date = ($6 AT TIME ZONE 'Asia/Colombo')::date
+      AND st.departure_datetime > $6
     ORDER BY st.departure_datetime ASC
 ) sched ON true
 ORDER BY mr_data.start_dist_m ASC, mr_data.drop_dist_m ASC, sched.departure_time ASC
@@ -1653,7 +1651,6 @@ direct_results AS (
         WHERE COALESCE(bor.master_route_id,rp.master_route_id) = dp.route_id
           AND st.is_bookable = true AND st.status IN ('scheduled','confirmed')
           AND st.departure_datetime > ($6 AT TIME ZONE 'Asia/Colombo')
-          AND st.departure_datetime::date = ($6 AT TIME ZONE 'Asia/Colombo')::date
         ORDER BY st.departure_datetime ASC
     ) s1 ON true
 ),
@@ -1710,7 +1707,6 @@ transit_results AS (
         WHERE COALESCE(bor.master_route_id,rp.master_route_id) = tc.r1_id
           AND st.is_bookable = true AND st.status IN ('scheduled','confirmed')
           AND st.departure_datetime > ($6 AT TIME ZONE 'Asia/Colombo')
-          AND st.departure_datetime::date = ($6 AT TIME ZONE 'Asia/Colombo')::date
         ORDER BY st.departure_datetime ASC
     ) l1 ON true
     JOIN LATERAL (

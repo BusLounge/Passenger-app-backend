@@ -112,17 +112,17 @@ func (r *BookingIntentRepository) CreateIntent(intent *models.BookingIntent) err
 		INSERT INTO booking_intents (
 			id, user_id, intent_type, status,
 			bus_intent, return_bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, return_pre_trip_lounge_intent, return_post_trip_lounge_intent, transport_intents,
-			bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, return_pre_lounge_fare, return_post_lounge_fare, total_amount, currency,
+			bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, total_amount, currency,
 			pricing_snapshot, payment_gateway, expires_at,
 			idempotency_key, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 		)`
 
 	_, err = r.db.Exec(query,
 		intent.ID, intent.UserID, intent.IntentType, intent.Status,
 		busIntentJSON, returnBusIntentJSON, preLoungeJSON, transitLoungeJSON, postLoungeJSON, returnPreLoungeJSON, returnPostLoungeJSON, transportIntentsJSON,
-		intent.BusFare, intent.PreLoungeFare, intent.TransitLoungeFare, intent.PostLoungeFare, intent.ReturnPreLoungeFare, intent.ReturnPostLoungeFare, intent.TotalAmount, intent.Currency,
+		intent.BusFare, intent.PreLoungeFare, intent.TransitLoungeFare, intent.PostLoungeFare, intent.TotalAmount, intent.Currency,
 		pricingSnapshotJSON, intent.PaymentGateway, intent.ExpiresAt,
 		intent.IdempotencyKey, intent.CreatedAt, intent.UpdatedAt,
 	)
@@ -139,7 +139,7 @@ func (r *BookingIntentRepository) GetIntentByID(intentID uuid.UUID) (*models.Boo
 		SELECT 
 			id, user_id, intent_type, status,
 			bus_intent, return_bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, return_pre_trip_lounge_intent, return_post_trip_lounge_intent, transport_intents,
-			bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, return_pre_lounge_fare, return_post_lounge_fare, total_amount, currency,
+			bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, total_amount, currency,
 			pricing_snapshot, payment_reference, payment_status, payment_gateway,
 			bus_booking_id, return_bus_booking_id, pre_lounge_booking_id, transit_lounge_booking_id, post_lounge_booking_id, return_pre_lounge_booking_id, return_post_lounge_booking_id,
 			expires_at, payment_initiated_at, confirmed_at, expired_at,
@@ -150,7 +150,7 @@ func (r *BookingIntentRepository) GetIntentByID(intentID uuid.UUID) (*models.Boo
 	err := r.db.QueryRow(query, intentID).Scan(
 		&intent.ID, &intent.UserID, &intent.IntentType, &intent.Status,
 		&busIntentJSON, &returnBusIntentJSON, &preLoungeJSON, &transitLoungeJSON, &postLoungeJSON, &returnPreLoungeJSON, &returnPostLoungeJSON, &transportIntentsJSON,
-		&intent.BusFare, &intent.PreLoungeFare, &intent.TransitLoungeFare, &intent.PostLoungeFare, &intent.ReturnPreLoungeFare, &intent.ReturnPostLoungeFare, &intent.TotalAmount, &intent.Currency,
+		&intent.BusFare, &intent.PreLoungeFare, &intent.TransitLoungeFare, &intent.PostLoungeFare, &intent.TotalAmount, &intent.Currency,
 		&pricingSnapshotJSON, &intent.PaymentReference, &paymentStatus, &intent.PaymentGateway,
 		&intent.BusBookingID, &intent.ReturnBusBookingID, &intent.PreLoungeBookingID, &intent.TransitLoungeBookingID, &intent.PostLoungeBookingID, &intent.ReturnPreLoungeBookingID, &intent.ReturnPostLoungeBookingID,
 		&intent.ExpiresAt, &intent.PaymentInitiatedAt, &intent.ConfirmedAt, &intent.ExpiredAt,
@@ -281,13 +281,6 @@ func (r *BookingIntentRepository) GetIntentsByUserID(userID uuid.UUID, limit, of
 	return intents, nil
 }
 
-// UpdateIntentAmount updates the total amount of an intent
-func (r *BookingIntentRepository) UpdateIntentAmount(intentID uuid.UUID, totalAmount float64) error {
-	query := `UPDATE booking_intents SET total_amount = $2, updated_at = NOW() WHERE id = $1`
-	_, err := r.db.Exec(query, intentID, totalAmount)
-	return err
-}
-
 // ============================================================================
 // STATUS UPDATE OPERATIONS
 // ============================================================================
@@ -299,6 +292,7 @@ func (r *BookingIntentRepository) UpdateIntentStatus(intentID uuid.UUID, status 
 	return err
 }
 
+// UpdateIntentPaymentPending marks intent as payment pending
 func (r *BookingIntentRepository) UpdateIntentPaymentPending(intentID uuid.UUID, paymentRef string) error {
 	query := `
 		UPDATE booking_intents 
@@ -307,14 +301,14 @@ func (r *BookingIntentRepository) UpdateIntentPaymentPending(intentID uuid.UUID,
 		    payment_status = 'pending',
 		    payment_initiated_at = NOW(),
 		    updated_at = NOW()
-		WHERE id = $1 AND status IN ('held', 'payment_pending')`
+		WHERE id = $1 AND status = 'held'`
 	result, err := r.db.Exec(query, intentID, paymentRef)
 	if err != nil {
 		return err
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("intent not in valid status for payment pending or not found")
+		return fmt.Errorf("intent not in 'held' status or not found")
 	}
 	return nil
 }
@@ -347,7 +341,7 @@ func (r *BookingIntentRepository) GetIntentByPaymentUID(uid string) (*models.Boo
 	query := `
 		SELECT id, user_id, intent_type, status, 
 		       bus_intent, return_bus_intent, pre_trip_lounge_intent, transit_lounge_intent, post_trip_lounge_intent, transport_intents, return_pre_trip_lounge_intent, return_post_trip_lounge_intent,
-		       bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, return_pre_lounge_fare, return_post_lounge_fare, total_amount, currency,
+		       bus_fare, pre_lounge_fare, transit_lounge_fare, post_lounge_fare, total_amount, currency,
 		       pricing_snapshot, payment_reference, payment_status, payment_gateway,
 		       payment_uid, payment_status_indicator,
 		       bus_booking_id, return_bus_booking_id, pre_lounge_booking_id, transit_lounge_booking_id, post_lounge_booking_id, return_pre_lounge_booking_id, return_post_lounge_booking_id,
@@ -436,19 +430,14 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 	preTripLounge *models.LoungeIntentPayload,
 	transitLounge *models.LoungeIntentPayload,
 	postTripLounge *models.LoungeIntentPayload,
-	returnPreTripLounge *models.LoungeIntentPayload,
-	returnPostTripLounge *models.LoungeIntentPayload,
 	preLoungeFare float64,
 	transitLoungeFare float64,
 	postLoungeFare float64,
-	returnPreLoungeFare float64,
-	returnPostLoungeFare float64,
 	newTotal float64,
 	newExpiresAt time.Time,
-	pricingSnapshotJSON string,
 ) error {
 	// Convert lounge payloads to JSON - use *string to properly handle JSONB
-	var preLoungeJSON, transitLoungeJSON, postLoungeJSON, returnPreLoungeJSON, returnPostLoungeJSON *string
+	var preLoungeJSON, transitLoungeJSON, postLoungeJSON *string
 	var err error
 
 	if preTripLounge != nil {
@@ -478,24 +467,6 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		postLoungeJSON = &s
 	}
 
-	if returnPreTripLounge != nil {
-		jsonBytes, err := json.Marshal(returnPreTripLounge)
-		if err != nil {
-			return fmt.Errorf("failed to marshal return-pre-trip lounge: %w", err)
-		}
-		s := string(jsonBytes)
-		returnPreLoungeJSON = &s
-	}
-
-	if returnPostTripLounge != nil {
-		jsonBytes, err := json.Marshal(returnPostTripLounge)
-		if err != nil {
-			return fmt.Errorf("failed to marshal return-post-trip lounge: %w", err)
-		}
-		s := string(jsonBytes)
-		returnPostLoungeJSON = &s
-	}
-
 	// Update intent type to 'combined' (bus + lounge)
 	// Must match DB constraint: chk_intent_type_matches_payload
 	newIntentType := "combined"
@@ -506,16 +477,11 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		    pre_trip_lounge_intent = COALESCE($3, pre_trip_lounge_intent),
 		    transit_lounge_intent = COALESCE($4, transit_lounge_intent),
 		    post_trip_lounge_intent = COALESCE($5, post_trip_lounge_intent),
-		    return_pre_trip_lounge_intent = COALESCE($11, return_pre_trip_lounge_intent),
-		    return_post_trip_lounge_intent = COALESCE($12, return_post_trip_lounge_intent),
 		    pre_lounge_fare = CASE WHEN $6 > 0 THEN $6 ELSE pre_lounge_fare END,
 		    transit_lounge_fare = CASE WHEN $7 > 0 THEN $7 ELSE transit_lounge_fare END,
 		    post_lounge_fare = CASE WHEN $8 > 0 THEN $8 ELSE post_lounge_fare END,
-		    return_pre_lounge_fare = CASE WHEN $13 > 0 THEN $13 ELSE return_pre_lounge_fare END,
-		    return_post_lounge_fare = CASE WHEN $14 > 0 THEN $14 ELSE return_post_lounge_fare END,
 		    total_amount = $9,
 		    expires_at = $10,
-		    pricing_snapshot = $15,
 		    updated_at = NOW()
 		WHERE id = $1 AND status = 'held'`
 
@@ -530,11 +496,6 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		postLoungeFare,
 		newTotal,
 		newExpiresAt,
-		returnPreLoungeJSON,
-		returnPostLoungeJSON,
-		returnPreLoungeFare,
-		returnPostLoungeFare,
-		pricingSnapshotJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update intent: %w", err)

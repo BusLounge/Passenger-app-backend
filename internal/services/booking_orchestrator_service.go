@@ -192,9 +192,7 @@ func (s *BookingOrchestratorService) CreateIntent(
 	}
 
 	// 7. Calculate totals
-	// Note: intent.BusFare already includes returnBusFare.
-	// intent.PreLoungeFare and intent.PostLoungeFare already include their respective return lounge fares.
-	intent.TotalAmount = intent.BusFare + intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare + intent.ReturnPreLoungeFare + intent.ReturnPostLoungeFare
+	intent.TotalAmount = intent.BusFare + intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare
 	intent.PricingSnapshot = models.PricingSnapshot{
 		BusFare:              intent.BusFare,
 		ReturnBusFare:        returnBusFare,
@@ -560,7 +558,6 @@ func (s *BookingOrchestratorService) createLoungeHold(
 func (s *BookingOrchestratorService) InitiatePayment(
 	intentID uuid.UUID,
 	userID uuid.UUID,
-	overrideAmount *float64,
 ) (*models.InitiatePaymentResponse, error) {
 	// 1. Get intent
 	intent, err := s.intentRepo.GetIntentByID(intentID)
@@ -583,25 +580,14 @@ func (s *BookingOrchestratorService) InitiatePayment(
 		}
 		return nil, fmt.Errorf("intent is not in valid state for payment (status: %s)", intent.Status)
 	}
-	// 4. Generate payment reference (max 20 chars for PAYable).
-	// Format: "IN-" + 6 chars of UUID + "-" + 10 chars Unix timestamp = 19 chars max
-	paymentRef := fmt.Sprintf("IN-%s-%d", intent.ID.String()[:6], time.Now().Unix())
-	
-	finalAmount := intent.TotalAmount
-	if overrideAmount != nil && *overrideAmount != intent.TotalAmount {
-		finalAmount = *overrideAmount
-		if err := s.intentRepo.UpdateIntentAmount(intent.ID, finalAmount); err != nil {
-			s.logger.WithError(err).Warn("Failed to update intent total amount")
-		}
-		// Update the local instance for subsequent usage (like logging)
-		intent.TotalAmount = finalAmount
-	}
-	amountStr := fmt.Sprintf("%.2f", finalAmount)
+
+	// 4. Generate payment reference (using intent ID as invoice ID)
+	paymentRef := fmt.Sprintf("INT-%s", intent.ID.String()[:8])
+	amountStr := fmt.Sprintf("%.2f", intent.TotalAmount)
 
 	// 5. Update intent to payment_pending
-	// This will update the status to payment_pending if it's currently held OR payment_pending
 	if err := s.intentRepo.UpdateIntentPaymentPending(intent.ID, paymentRef); err != nil {
-		return nil, fmt.Errorf("failed to update intent payment pending: %w", err)
+		return nil, fmt.Errorf("failed to update intent: %w", err)
 	}
 
 	// 6. Build payment response
@@ -961,9 +947,10 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 
 	// Determine booking type based on lounge intents
 	bookingType := models.BookingTypeBusOnly
-	totalAmount := intent.TotalAmount
+	totalAmount := intent.BusFare
 	if intent.PreTripLoungeIntent != nil || intent.TransitLoungeIntent != nil || intent.PostTripLoungeIntent != nil {
 		bookingType = models.BookingTypeBusWithLounge
+		totalAmount = intent.TotalAmount
 	}
 
 	loungeTotal := 0.0
@@ -1399,8 +1386,6 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	preTripLounge *models.LoungeIntentPayload,
 	transitLounge *models.LoungeIntentPayload,
 	postTripLounge *models.LoungeIntentPayload,
-	returnPreTripLounge *models.LoungeIntentPayload,
-	returnPostTripLounge *models.LoungeIntentPayload,
 ) (*models.BookingIntentResponse, error) {
 	// 1. Get and validate intent
 	intent, err := s.intentRepo.GetIntentByID(intentID)
@@ -1464,11 +1449,7 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	}
 
 	// 2. Calculate additional lounge fares
-	preLoungeFare := intent.PreLoungeFare
-	transitLoungeFare := intent.TransitLoungeFare
-	postLoungeFare := intent.PostLoungeFare
-	returnPreLoungeFare := intent.ReturnPreLoungeFare
-	returnPostLoungeFare := intent.ReturnPostLoungeFare
+	var preLoungeFare, transitLoungeFare, postLoungeFare float64
 
 	if preTripLounge != nil {
 		loungeID, _ := uuid.Parse(preTripLounge.LoungeID)
@@ -1599,63 +1580,8 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 		}
 	}
 
-	
-if returnPreTripLounge != nil {
-loungeID, _ := uuid.Parse(returnPreTripLounge.LoungeID)
-lounge, err := s.loungeRepo.GetLoungeByID(loungeID)
-if err == nil && lounge != nil && lounge.Status == "approved" && lounge.IsOperational {
-returnPreLoungeFare = returnPreTripLounge.TotalPrice
-expiresAt := time.Now().Add(s.config.IntentTTL)
-loungeDate := parseLoungeDate(returnPreTripLounge.Date)
-checkInTime := returnPreTripLounge.CheckInTime
-if checkInTime == "" { checkInTime = "09:00" }
-checkOutTime := calculateCheckoutTime(checkInTime, returnPreTripLounge.PricingType)
-
-hold := &models.LoungeCapacityHold{
-ID:            uuid.New(),
-LoungeID:      loungeID,
-IntentID:      intent.ID,
-Date:          loungeDate,
-TimeSlotStart: checkInTime,
-TimeSlotEnd:   checkOutTime,
-GuestsCount:   returnPreTripLounge.GuestCount,
-HeldUntil:     expiresAt,
-Status:        "held",
-CreatedAt:     time.Now(),
-}
-s.intentRepo.CreateLoungeCapacityHold(hold)
-}
-}
-
-if returnPostTripLounge != nil {
-loungeID, _ := uuid.Parse(returnPostTripLounge.LoungeID)
-lounge, err := s.loungeRepo.GetLoungeByID(loungeID)
-if err == nil && lounge != nil && lounge.Status == "approved" && lounge.IsOperational {
-returnPostLoungeFare = returnPostTripLounge.TotalPrice
-expiresAt := time.Now().Add(s.config.IntentTTL)
-loungeDate := parseLoungeDate(returnPostTripLounge.Date)
-checkInTime := returnPostTripLounge.CheckInTime
-if checkInTime == "" { checkInTime = "09:00" }
-checkOutTime := calculateCheckoutTime(checkInTime, returnPostTripLounge.PricingType)
-
-hold := &models.LoungeCapacityHold{
-ID:            uuid.New(),
-LoungeID:      loungeID,
-IntentID:      intent.ID,
-Date:          loungeDate,
-TimeSlotStart: checkInTime,
-TimeSlotEnd:   checkOutTime,
-GuestsCount:   returnPostTripLounge.GuestCount,
-HeldUntil:     expiresAt,
-Status:        "held",
-CreatedAt:     time.Now(),
-}
-s.intentRepo.CreateLoungeCapacityHold(hold)
-}
-}
-
-// 3. Update intent with lounge data
-	newTotal := intent.BusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
+	// 3. Update intent with lounge data
+	newTotal := intent.BusFare + preLoungeFare + transitLoungeFare + postLoungeFare
 	newExpiresAt := time.Now().Add(s.config.IntentTTL) // Extend the hold timer
 
 	s.logger.WithFields(logrus.Fields{
@@ -1666,37 +1592,19 @@ s.intentRepo.CreateLoungeCapacityHold(hold)
 		"pre_lounge_fare":     preLoungeFare,
 		"transit_lounge_fare": transitLoungeFare,
 		"post_lounge_fare":    postLoungeFare,
+		"new_total":           newTotal,
 	}).Info("AddLoungeToIntent: Saving lounge data to intent")
-
-	// 3. Build new pricing snapshot
-	intent.PricingSnapshot.Total = newTotal
-	intent.PricingSnapshot.PreLoungeFare = preLoungeFare
-	intent.PricingSnapshot.TransitLoungeFare = transitLoungeFare
-	intent.PricingSnapshot.PostLoungeFare = postLoungeFare
-	intent.PricingSnapshot.ReturnPreLoungeFare = returnPreLoungeFare
-	intent.PricingSnapshot.ReturnPostLoungeFare = returnPostLoungeFare
-	intent.PricingSnapshot.CalculatedAt = time.Now()
-
-	pricingBytes, err := json.Marshal(intent.PricingSnapshot)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal pricing snapshot: %w", err)
-	}
 
 	err = s.intentRepo.AddLoungeToIntent(
 		intent.ID,
 		preTripLounge,
 		transitLounge,
 		postTripLounge,
-		returnPreTripLounge,
-		returnPostTripLounge,
 		preLoungeFare,
 		transitLoungeFare,
 		postLoungeFare,
-		returnPreLoungeFare,
-		returnPostLoungeFare,
 		newTotal,
 		newExpiresAt,
-		string(pricingBytes),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update intent with lounges: %w", err)
@@ -1797,15 +1705,13 @@ func (s *BookingOrchestratorService) buildIntentResponse(intent *models.BookingI
 		IntentID: intent.ID,
 		Status:   string(intent.Status),
 		PriceBreakdown: models.PriceBreakdown{
-			BusFare:              intent.BusFare,
-			ReturnBusFare:        intent.PricingSnapshot.ReturnBusFare,
-			PreLoungeFare:        intent.PreLoungeFare,
-			TransitLoungeFare:    intent.TransitLoungeFare,
-			PostLoungeFare:       intent.PostLoungeFare,
-			ReturnPreLoungeFare:  intent.ReturnPreLoungeFare,
-			ReturnPostLoungeFare: intent.ReturnPostLoungeFare,
-			Total:                intent.TotalAmount,
-			Currency:             intent.Currency,
+			BusFare:           intent.BusFare,
+			ReturnBusFare:     intent.PricingSnapshot.ReturnBusFare,
+			PreLoungeFare:     intent.PreLoungeFare,
+			TransitLoungeFare: intent.TransitLoungeFare,
+			PostLoungeFare:    intent.PostLoungeFare,
+			Total:             intent.TotalAmount,
+			Currency:          intent.Currency,
 		},
 		ExpiresAt:                 intent.ExpiresAt,
 		TTLSeconds:                ttl,

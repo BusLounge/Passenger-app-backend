@@ -307,8 +307,8 @@ type BookingIntent struct {
 	PreLoungeFare     float64         `json:"pre_lounge_fare" db:"pre_lounge_fare"`
 	TransitLoungeFare float64         `json:"transit_lounge_fare" db:"transit_lounge_fare"`
 	PostLoungeFare    float64         `json:"post_lounge_fare" db:"post_lounge_fare"`
-	ReturnPreLoungeFare float64     `json:"return_pre_lounge_fare,omitempty" db:"return_pre_lounge_fare"`
-	ReturnPostLoungeFare float64    `json:"return_post_lounge_fare,omitempty" db:"return_post_lounge_fare"`
+	ReturnPreLoungeFare float64     `json:"return_pre_lounge_fare,omitempty" db:"-"`
+	ReturnPostLoungeFare float64    `json:"return_post_lounge_fare,omitempty" db:"-"`
 	TotalAmount       float64         `json:"total_amount" db:"total_amount"`
 	Currency          string          `json:"currency" db:"currency"`
 	PricingSnapshot   PricingSnapshot `json:"pricing_snapshot" db:"pricing_snapshot"`
@@ -392,6 +392,7 @@ type CreateBookingIntentRequest struct {
 
 	// Bus booking data (required for bus_only and combined)
 	Bus       *BusIntentRequest `json:"bus,omitempty"`
+	
 	// Optional return bus for round-trips
 	ReturnBus *BusIntentRequest `json:"return_bus,omitempty"`
 
@@ -417,12 +418,12 @@ type CreateBookingIntentRequest struct {
 type BusIntentRequest struct {
 	ScheduledTripID   string                 `json:"scheduled_trip_id" binding:"required"`
 	BoardingStopID    *string                `json:"boarding_stop_id,omitempty"`
-	BoardingStopName  string                 `json:"boarding_stop_name"`
+	BoardingStopName  string                 `json:"boarding_stop_name" binding:"required"`
 	AlightingStopID   *string                `json:"alighting_stop_id,omitempty"`
-	AlightingStopName string                 `json:"alighting_stop_name"`
+	AlightingStopName string                 `json:"alighting_stop_name" binding:"required"`
 	Seats             []BusIntentSeatRequest `json:"seats" binding:"required,min=1"`
 	PassengerName     string                 `json:"passenger_name" binding:"required"`
-	PassengerPhone    string                 `json:"passenger_phone"`
+	PassengerPhone    string                 `json:"passenger_phone" binding:"required"`
 	PassengerEmail    *string                `json:"passenger_email,omitempty"`
 	SpecialRequests   *string                `json:"special_requests,omitempty"`
 	SearchFromLounge  *string                `json:"search_from_lounge,omitempty"`

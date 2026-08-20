@@ -376,9 +376,12 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 	query := `
 		SELECT 
 			b.id, b.booking_reference, b.booking_type,
-			b.total_amount, b.payment_status, b.booking_status,
-			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(b.total_amount, 0) as total_amount, 
+			COALESCE(b.payment_status, 'pending') as payment_status, 
+			COALESCE(b.booking_status, 'pending') as booking_status,
+			COALESCE(b.passenger_name, '') as passenger_name, b.created_at,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -389,6 +392,8 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		ORDER BY b.created_at DESC
 		LIMIT $2 OFFSET $3`
@@ -404,24 +409,42 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 	query := `
 		SELECT 
 			b.id, b.booking_reference, b.booking_type,
-			b.total_amount, b.payment_status, b.booking_status,
-			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(b.total_amount, 0) as total_amount, 
+			COALESCE(b.payment_status, 'pending') as payment_status, 
+			COALESCE(b.booking_status, 'pending') as booking_status,
+			COALESCE(b.passenger_name, '') as passenger_name, b.created_at,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
-		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
+		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
+		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
-		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
-		  AND (st.departure_datetime > NOW() AT TIME ZONE 'Asia/Colombo' - INTERVAL '24 hours' OR st.departure_datetime IS NULL)
-		ORDER BY st.departure_datetime ASC
+		  AND (bb.status IS NULL OR bb.status NOT IN ('cancelled', 'completed', 'no_show'))
+		  AND (
+			  COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			  ) IS NULL
+			  OR
+			  COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			  ) > NOW() AT TIME ZONE 'Asia/Colombo' - INTERVAL '24 hours'
+		  )
+		ORDER BY departure_datetime ASC
 		LIMIT $2 OFFSET $3`
 
 	var bookings []models.BookingListItem
@@ -436,9 +459,13 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
@@ -447,10 +474,13 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND (
 			b.booking_status = 'completed'
 			OR bb.status = 'completed'
+			OR (b.booking_type = 'lounge_only' AND EXISTS(SELECT 1 FROM lounge_bookings lb WHERE lb.master_booking_id = b.id AND lb.status = 'completed'))
 		  )
 		ORDER BY b.created_at DESC
 		LIMIT $2 OFFSET $3`
@@ -469,9 +499,13 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
@@ -480,6 +514,8 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('completed')
 		  AND (bb.status IS NULL OR bb.status NOT IN ('completed'))
@@ -505,7 +541,8 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -516,6 +553,8 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
 		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
 		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
@@ -534,12 +573,6 @@ func (r *AppBookingRepository) UpdatePaymentStatus(
 	status models.MasterPaymentStatus,
 	method, reference, gateway *string,
 ) error {
-	tx, err := r.db.Beginx()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
 	query := `
 		UPDATE bookings 
 		SET payment_status = $1,
@@ -550,28 +583,10 @@ func (r *AppBookingRepository) UpdatePaymentStatus(
 		    confirmed_at = CASE WHEN $1 = 'paid' THEN COALESCE(confirmed_at, NOW()) ELSE confirmed_at END,
 		    booking_status = CASE WHEN $1 = 'paid' THEN 'confirmed' ELSE booking_status END,
 		    updated_at = NOW()
-		WHERE id = $5
-		RETURNING user_id, total_amount`
+		WHERE id = $5`
 
-	var userID string
-	var totalAmount float64
-	err = tx.QueryRow(query, status, method, reference, gateway, bookingID).Scan(&userID, &totalAmount)
-	if err != nil {
-		return err
-	}
-
-	if status == "paid" {
-		loyaltyQuery := `
-			INSERT INTO passenger_loyalty_ledger (user_id, booking_id, points)
-			VALUES ($1, $2, CAST($3 AS INT) / 100)
-			ON CONFLICT (booking_id) DO NOTHING`
-		_, err = tx.Exec(loyaltyQuery, userID, bookingID, totalAmount)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
+	_, err := r.db.Exec(query, status, method, reference, gateway, bookingID)
+	return err
 }
 
 // CancelBooking cancels a booking and releases seats
@@ -654,7 +669,7 @@ func (r *AppBookingRepository) CancelTransportBooking(transportID string, userID
 	if err != nil {
 		return err
 	}
-	
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
