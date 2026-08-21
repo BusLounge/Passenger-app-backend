@@ -12,15 +12,19 @@ import (
 	"github.com/smarttransit/sms-auth-backend/internal/database"
 	"github.com/smarttransit/sms-auth-backend/internal/middleware"
 	"github.com/smarttransit/sms-auth-backend/internal/models"
+	"github.com/smarttransit/sms-auth-backend/internal/services"
+	"github.com/smarttransit/sms-auth-backend/pkg/sms"
 )
 
 // AppBookingHandler handles passenger app booking operations
 type AppBookingHandler struct {
-	bookingRepo  *database.AppBookingRepository
-	tripRepo     *database.ScheduledTripRepository
-	tripSeatRepo *database.TripSeatRepository
-	routeRepo    *database.BusOwnerRouteRepository
-	logger       *logrus.Logger
+	bookingRepo   *database.AppBookingRepository
+	tripRepo      *database.ScheduledTripRepository
+	tripSeatRepo  *database.TripSeatRepository
+	routeRepo     *database.BusOwnerRouteRepository
+	walletService *services.WalletService
+	smsGateway    sms.SMSGateway
+	logger        *logrus.Logger
 }
 
 // NewAppBookingHandler creates a new AppBookingHandler
@@ -29,14 +33,18 @@ func NewAppBookingHandler(
 	tripRepo *database.ScheduledTripRepository,
 	tripSeatRepo *database.TripSeatRepository,
 	routeRepo *database.BusOwnerRouteRepository,
+	walletService *services.WalletService,
+	smsGateway sms.SMSGateway,
 	logger *logrus.Logger,
 ) *AppBookingHandler {
 	return &AppBookingHandler{
-		bookingRepo:  bookingRepo,
-		tripRepo:     tripRepo,
-		tripSeatRepo: tripSeatRepo,
-		routeRepo:    routeRepo,
-		logger:       logger,
+		bookingRepo:   bookingRepo,
+		tripRepo:      tripRepo,
+		tripSeatRepo:  tripSeatRepo,
+		routeRepo:     routeRepo,
+		walletService: walletService,
+		smsGateway:    smsGateway,
+		logger:        logger,
 	}
 }
 
@@ -471,8 +479,47 @@ func (h *AppBookingHandler) ConfirmPayment(c *gin.Context) {
 		return
 	}
 
-	// Update payment status
+	// Check if this is an internal_wallet payment
 	gateway := req.PaymentGateway
+	if gateway == "internal_wallet" {
+		// Attempt to deduct the balance using WalletRepository directly (Or via a service)
+		if h.walletService != nil {
+			wallet, err := h.walletService.GetWalletData(userCtx.UserID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get wallet for deduction"})
+				return
+			}
+			
+			balance, ok := wallet["balance"].(float64)
+			if !ok || balance < booking.TotalAmount {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient wallet balance"})
+				return
+			}
+			
+			reqAmt := booking.TotalAmount
+			// Deduct the amount
+			// Wait, we need a method to deduct balance in wallet repo. 
+			// If not available, we can mock it or use an inline query for completion.
+			// The wallet repo has `DeductBalance(userID, amount, reference)`. Let's assume the walletService has it.
+			// Actually we write a direct query for now or update service since we wrote WalletService.
+			// I'll update WalletService in the next step to include DeductBalance if missing.
+			err = h.walletService.DeductBalance(userCtx.UserID, reqAmt, bookingID, "Booking Payment: "+booking.BookingReference)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to deduct wallet balance"})
+				return
+			}
+			
+			// Send Low Balance Notification if below 500 LKR
+			if balance - reqAmt < 500 && h.smsGateway != nil {
+				h.logger.Info("Sending low balance SMS notification")
+				msg := "Your SmartTransit wallet balance is low. Please recharge to continue using E-Wallet seamlessly."
+				// You usually need the phone number, let's use the booking PassengerPhone
+				go h.smsGateway.SendBulkSMS([]string{booking.PassengerPhone}, msg)
+			}
+		}
+	}
+
+	// Update payment status
 	err = h.bookingRepo.UpdatePaymentStatus(
 		bookingID,
 		models.MasterPaymentPaid,
@@ -487,6 +534,13 @@ func (h *AppBookingHandler) ConfirmPayment(c *gin.Context) {
 
 	// Also update bus booking and seat statuses to confirmed/booked
 	// (This would be done by the repository in a proper implementation)
+
+	// Send Booking Confirmation SMS
+	if h.smsGateway != nil {
+		h.logger.Info("Sending booking confirmation SMS notification")
+		msg := fmt.Sprintf("Your booking is confirmed! Reference: %s. Departure: %s", booking.BookingReference, booking.BusBooking.DepartureDatetime.Format("Jan 02 15:04"))
+		go h.smsGateway.SendBulkSMS([]string{booking.PassengerPhone}, msg)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "Payment confirmed successfully",

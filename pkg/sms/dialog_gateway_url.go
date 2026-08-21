@@ -138,3 +138,42 @@ func (d *DialogURLGateway) SendOTPWithHash(phone, otpCode, appHash string) (int6
 func (d *DialogURLGateway) GetName() string {
 	return "Dialog URL Gateway"
 }
+
+// SendBulkSMS sends a general SMS to multiple phone numbers
+func (d *DialogURLGateway) SendBulkSMS(phones []string, message string) (int64, error) {
+	// Simple fallback: send SMS sequentially
+	var lastTxID int64
+	for _, phone := range phones {
+		formattedPhone, err := FormatPhoneForDialog(phone)
+		if err != nil {
+			continue // Skip invalid numbers
+		}
+
+		baseURL := "https://e-sms.dialog.lk/api/v1/message-via-url/create/url-campaign"
+
+		params := url.Values{}
+		params.Add("esmsqk", d.apiKey)
+		params.Add("list", formattedPhone)
+		params.Add("source_address", d.mask)
+		params.Add("message", message)
+
+		fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(fullURL)
+		if err != nil {
+			continue
+		}
+		
+		body, _ := io.ReadAll(resp.Body)
+		if strings.TrimSpace(string(body)) == "1" {
+			lastTxID = time.Now().Unix()
+		}
+		resp.Body.Close()
+	}
+
+	if lastTxID == 0 {
+		return 0, fmt.Errorf("all SMS failed")
+	}
+	return lastTxID, nil
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/smarttransit/sms-auth-backend/internal/database"
 	"github.com/smarttransit/sms-auth-backend/internal/models"
+	"github.com/smarttransit/sms-auth-backend/pkg/sms"
 )
 
 // BookingOrchestratorConfig holds configuration for the orchestrator
@@ -41,6 +42,8 @@ type BookingOrchestratorService struct {
 	busOwnerRouteRepo    *database.BusOwnerRouteRepository
 	transportBookingRepo *database.TransportBookingRepository
 	payableService       *PAYableService
+	walletService        *WalletService
+	smsGateway           sms.SMSGateway
 	config               BookingOrchestratorConfig
 	logger               *logrus.Logger
 }
@@ -56,6 +59,8 @@ func NewBookingOrchestratorService(
 	busOwnerRouteRepo *database.BusOwnerRouteRepository,
 	transportBookingRepo *database.TransportBookingRepository,
 	payableService *PAYableService,
+	walletService *WalletService,
+	smsGateway sms.SMSGateway,
 	config BookingOrchestratorConfig,
 	logger *logrus.Logger,
 ) *BookingOrchestratorService {
@@ -69,6 +74,8 @@ func NewBookingOrchestratorService(
 		busOwnerRouteRepo:    busOwnerRouteRepo,
 		transportBookingRepo: transportBookingRepo,
 		payableService:       payableService,
+		walletService:        walletService,
+		smsGateway:           smsGateway,
 		config:               config,
 		logger:               logger,
 	}
@@ -929,6 +936,13 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 		"transit_lounge_booking_id": transitLoungeBookingID,
 		"post_lounge_booking_id":    postLoungeBookingID,
 	}).Info("Booking confirmed successfully")
+
+	// Send Booking Confirmation SMS via Intent Passenger Phone
+	if s.smsGateway != nil && intent.PassengerPhone != "" {
+		s.logger.Info("Sending booking confirmation SMS notification via orchestrator")
+		msg := fmt.Sprintf("Your booking is confirmed! Ref: %s. Total: %.2f", masterRef, intent.TotalAmount)
+		go s.smsGateway.SendBulkSMS([]string{intent.PassengerPhone}, msg)
+	}
 
 	return s.buildConfirmResponse(intent), nil
 }

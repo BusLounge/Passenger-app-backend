@@ -13,6 +13,7 @@ type WalletRepository interface {
 	GetWalletByUserID(userID uuid.UUID) (*models.Wallet, error)
 	GetWalletTransactions(walletID uuid.UUID) ([]models.WalletTransaction, error)
 	ConfirmTopUp(userID uuid.UUID, amount float64, gatewayRef string) error
+	DeductBalance(userID uuid.UUID, amount float64, reference string) error
 }
 
 type walletRepository struct {
@@ -119,6 +120,42 @@ func (r *walletRepository) ConfirmTopUp(userID uuid.UUID, amount float64, gatewa
 	_, err = tx.Exec("UPDATE wallets_passenger SET balance = balance + $1 WHERE id = $2", amount, wallet.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update balance: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (r *walletRepository) DeductBalance(userID uuid.UUID, amount float64, reference string) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	wallet, err := r.GetWalletByUserID(userID)
+	if err != nil {
+		return err
+	}
+
+	if wallet.Balance < amount {
+		return fmt.Errorf("insufficient funds")
+	}
+
+	_, err = tx.Exec(`
+		UPDATE wallets_passenger 
+		SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $2
+	`, amount, wallet.ID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO wallet_transactions_passenger (wallet_id, amount, transaction_type, reference_type, gateway_reference, description)
+		VALUES ($1, $2, 'DEBIT', 'BOOKING', $3, 'Digital Wallet Booking Deduction')
+	`, wallet.ID, amount, reference)
+	if err != nil {
+		return err
 	}
 
 	return tx.Commit()

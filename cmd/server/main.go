@@ -310,6 +310,12 @@ func main() {
 	)
 	logger.Info("✓ Trip seat handler initialized")
 
+	// Initialize Wallet system first, as App Booking needs it for UI payments
+	logger.Info("💰 Initializing Wallet system...")
+	walletRepository := database.NewWalletRepository(sqlxDB.DB)
+	walletService := services.NewWalletService(walletRepository, logger)
+	walletHandler := handlers.NewWalletHandler(walletService, logger)
+
 	// Initialize App Booking system (passenger app bookings)
 	logger.Info("Initializing app booking system...")
 	appBookingRepo := database.NewAppBookingRepository(sqlxDB.DB)
@@ -317,7 +323,10 @@ func main() {
 		appBookingRepo,
 		scheduledTripRepo,
 		tripSeatRepo,
+		
 		busOwnerRouteRepo,
+		walletService,
+		smsGateway,
 		logger,
 	)
 	staffBookingHandler := handlers.NewStaffBookingHandler(appBookingRepo)
@@ -330,6 +339,9 @@ func main() {
 	bookingIntentRepo := database.NewBookingIntentRepository(sqlxDB.DB)
 	transportBookingRepo := database.NewTransportBookingRepository(sqlxDB.DB)
 	bookingOrchestratorConfig := services.DefaultOrchestratorConfig()
+	// Initialize payment audit repository for logging all payment events
+	paymentAuditRepo := database.NewPaymentAuditRepository(sqlxDB.DB, logger)
+	logger.Info("✓ Payment audit repository initialized")
 
 	// Initialize PAYable payment service
 	payableService := services.NewPAYableService(&cfg.Payment, logger)
@@ -339,9 +351,9 @@ func main() {
 		logger.Warn("⚠️ PAYable payment gateway not configured - using placeholder mode")
 	}
 
-	// Initialize payment audit repository for logging all payment events
-	paymentAuditRepo := database.NewPaymentAuditRepository(sqlxDB.DB, logger)
-	logger.Info("✓ Payment audit repository initialized")
+	// Initialize PayHere service
+	payhereService := services.NewPayHereService("", "", logger)
+	logger.Info("✓ PayHere Webhook service initialized")
 
 	bookingOrchestratorService := services.NewBookingOrchestratorService(
 		bookingIntentRepo,
@@ -353,12 +365,16 @@ func main() {
 		busOwnerRouteRepo,
 		transportBookingRepo,
 		payableService,
+		walletService,
+		smsGateway,
 		bookingOrchestratorConfig,
 		logger,
 	)
 	bookingOrchestratorHandler := handlers.NewBookingOrchestratorHandler(
 		bookingOrchestratorService,
 		payableService,
+		payhereService,
+		walletService,
 		paymentAuditRepo,
 		logger,
 	)
@@ -938,11 +954,29 @@ func main() {
 		logger.Info("  ✅ POST /api/v1/payments/webhook - Payment gateway webhook")
 		v1.POST("/payments/webhook", bookingOrchestratorHandler.PaymentWebhook)
 
+		// PayHere webhook
+		logger.Info("  ✅ POST /api/v1/payments/payhere/webhook - PayHere gateway webhook")
+		v1.POST("/payments/payhere/webhook", bookingOrchestratorHandler.PayHereWebhook)
+
 		// Payment return URL (no auth - browser redirect from payment gateway)
 		logger.Info("  ✅ GET /api/v1/payments/return - Payment return page")
 		v1.GET("/payments/return", bookingOrchestratorHandler.PaymentReturn)
 
 		logger.Info("🎯 Booking Orchestration routes registered successfully")
+
+		// ============================================================================
+		// WALLET ROUTES (Passenger Balance & Top-Up)
+		// ============================================================================
+		logger.Info("💰 Registering Wallet routes...")
+		wallet := v1.Group("/wallet")
+		wallet.Use(middleware.AuthMiddleware(jwtService))
+		{
+			logger.Info("  ✅ GET /api/v1/wallet - Get Wallet Balance")
+			wallet.GET("", walletHandler.GetWallet)
+			logger.Info("  ✅ POST /api/v1/wallet/topup/confirm - Confirm TopUp directly")
+			wallet.POST("/topup/confirm", walletHandler.ConfirmTopUp)
+		}
+		logger.Info("💰 Wallet routes registered successfully")
 
 		// ============================================================================
 		// STAFF BOOKING ROUTES (Conductor/Driver operations)

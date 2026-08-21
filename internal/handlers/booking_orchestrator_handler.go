@@ -21,6 +21,8 @@ import (
 type BookingOrchestratorHandler struct {
 	orchestratorService *services.BookingOrchestratorService
 	payableService      *services.PAYableService
+	payhereService      *services.PayHereService
+	walletService       *services.WalletService
 	paymentAuditRepo    *database.PaymentAuditRepository
 	logger              *logrus.Logger
 }
@@ -29,12 +31,16 @@ type BookingOrchestratorHandler struct {
 func NewBookingOrchestratorHandler(
 	orchestratorService *services.BookingOrchestratorService,
 	payableService *services.PAYableService,
+	payhereService *services.PayHereService,
+	walletService *services.WalletService,
 	paymentAuditRepo *database.PaymentAuditRepository,
 	logger *logrus.Logger,
 ) *BookingOrchestratorHandler {
 	return &BookingOrchestratorHandler{
 		orchestratorService: orchestratorService,
 		payableService:      payableService,
+		payhereService:      payhereService,
+		walletService:       walletService,
 		paymentAuditRepo:    paymentAuditRepo,
 		logger:              logger,
 	}
@@ -903,3 +909,90 @@ func (h *BookingOrchestratorHandler) GetMyIntents(c *gin.Context) {
 		"offset":  offset,
 	})
 }
+
+// ============================================================================
+// PAYHERE WEBHOOK - POST /api/v1/payments/payhere/webhook
+// ============================================================================
+
+func (h *BookingOrchestratorHandler) PayHereWebhook(c *gin.Context) {
+	var payload services.PayHereWebhookPayload
+	if err := c.ShouldBind(&payload); err != nil {
+		h.logger.WithError(err).Error("Failed to bind PayHere webhook payload")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload"})
+		return
+	}
+
+	// 1. Verify MD5 Signature
+	if h.payhereService == nil {
+		h.logger.Error("PayHere service not configured")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Service misconfigured"})
+		return
+	}
+
+	if !h.payhereService.VerifyWebhook(payload) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Signature mismatch"})
+		return
+	}
+
+	// 2. Check if Payment is Successful
+	if payload.StatusCode != 2 { // 2 = Success in PayHere
+		h.logger.WithFields(logrus.Fields{
+			"order_id":    payload.OrderID,
+			"status_code": payload.StatusCode,
+		}).Warn("PayHere payment not successful")
+		c.JSON(http.StatusOK, gin.H{"message": "Acknowledged unsuccessful payment"})
+		return
+	}
+
+	// 3. Route to Wallet TopUp or Booking Confirmation
+	if strings.HasPrefix(payload.OrderID, "WAL-") {
+		// Attempt to use custom_1 (User ID) if passed by app to identify user.
+		// Alternatively, you can do a DB lookup here. 
+		// For E-Wallet TopUp, we'll try to find the UserID from a repository if custom_1 isn't directly a UUID.
+		userID, err := uuid.Parse(payload.Custom1)
+		if err != nil {
+			h.logger.Error("PayHere Webhook: Missing or invalid UserID in Custom1 for Wallet TopUp")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid UserID in payload"})
+			return
+		}
+
+		err = h.walletService.ConfirmTopUp(userID, payload.PayHereAmount, payload.PaymentID)
+		if err != nil {
+			h.logger.WithError(err).Error("Failed to confirm wallet top-up from PayHere Webhook")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to topup"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Wallet TopUp successful"})
+		return
+	}
+	
+	// Assume it is a Booking intent (e.g. INT-....)
+	// We need the Intent UUID. The OrderID is likely the Intent reference we gave (e.g. INT-xxxx)
+	// We need to look up intent ID by its reference. The Orchestrator requires full Intent ID.
+	// We lookup intent by PaymentRef (Invoice ID).
+	
+	intent, err := h.orchestratorService.GetIntentByPaymentUID(payload.OrderID)
+	if err != nil || intent == nil {
+		h.logger.WithField("order_id", payload.OrderID).Warn("Intent not found for PayHere webhook")
+		c.JSON(http.StatusOK, gin.H{"message": "Intent not found, maybe already processed"})
+		return
+	}
+
+	// Ensure amounts match exactly
+	if intent.TotalAmount != payload.PayHereAmount {
+		h.logger.Error("PayHere amount mismatch with Booking Intent!")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Amount mismatch"})
+		return
+	}
+
+	// Confirm the booking!
+	_, err = h.orchestratorService.ConfirmBooking(intent.ID, intent.UserID, &payload.PaymentID)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to confirm booking from PayHere Webhook")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Booking confirmation failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Booking Confirmed"})
+}
+
