@@ -139,8 +139,8 @@ func Load() (*Config, error) {
 		JWT: JWTConfig{
 			Secret:             getEnv("JWT_SECRET", ""),
 			RefreshSecret:      getEnv("JWT_REFRESH_SECRET", ""),
-			AccessTokenExpiry:  time.Duration(getEnvAsInt("JWT_ACCESS_TOKEN_EXPIRY", 900)) * time.Second,
-			RefreshTokenExpiry: time.Duration(getEnvAsInt("JWT_REFRESH_TOKEN_EXPIRY", 7776000)) * time.Second,
+			AccessTokenExpiry:  time.Duration(getEnvAsInt("JWT_ACCESS_TOKEN_EXPIRY", 2592000)) * time.Second, // Set to 30 days
+			RefreshTokenExpiry: time.Duration(getEnvAsInt("JWT_REFRESH_TOKEN_EXPIRY", 604800)) * time.Second, // Set to 7 days
 		},
 		SMS: SMSConfig{
 			Mode:             getEnv("SMS_MODE", "dev"),          // "dev" or "production"
@@ -170,7 +170,7 @@ func Load() (*Config, error) {
 		CORS: CORSConfig{
 			AllowedOrigins: getEnvAsSlice("CORS_ALLOWED_ORIGINS", []string{"*"}),
 			AllowedMethods: getEnvAsSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-			AllowedHeaders: getEnvAsSlice("CORS_ALLOWED_HEADERS", []string{"Content-Type", "Authorization"}),
+			AllowedHeaders: getEnvAsSlice("CORS_ALLOWED_HEADERS", []string{"Content-Type", "Authorization", "X-Device-ID", "X-Device-Type", "X-Device-Model", "X-App-Version", "X-OS-Version", "X-FCM-Token", "Accept", "Origin"}),
 		},
 		Security: SecurityConfig{
 			BcryptCost:       getEnvAsInt("BCRYPT_COST", 12),

@@ -62,3 +62,14 @@ const (
 	LoungeStatusSuspended LoungeStatus = "suspended"
 	LoungeStatusRejected  LoungeStatus = "rejected"
 )
+
+// LoungeRecommendationStats represents the monthly statistics for a lounge
+type LoungeRecommendationStats struct {
+	MonthlyBookings      int `json:"monthly_bookings"`
+	CurrentActiveGuests  int `json:"current_active_guests"`
+}
+
+// LoungeRecommendationStatsRequest is the request payload to get stats for multiple lounges
+type LoungeRecommendationStatsRequest struct {
+	LoungeIDs []uuid.UUID `json:"lounge_ids" binding:"required,min=1"`
+}

@@ -119,9 +119,9 @@ type MasterBooking struct {
 	LoungeTransportTotal float64 `json:"lounge_transport_total" db:"lounge_transport_total"`
 	PreOrderTotal        float64 `json:"pre_order_total" db:"pre_order_total"`
 	Subtotal             float64 `json:"subtotal" db:"subtotal"`
-	DiscountAmount float64 `json:"discount_amount" db:"discount_amount"`
-	TaxAmount      float64 `json:"tax_amount" db:"tax_amount"`
-	TotalAmount    float64 `json:"total_amount" db:"total_amount"`
+	DiscountAmount       float64 `json:"discount_amount" db:"discount_amount"`
+	TaxAmount            float64 `json:"tax_amount" db:"tax_amount"`
+	TotalAmount          float64 `json:"total_amount" db:"total_amount"`
 
 	// Promo
 	PromoCode          *string `json:"promo_code,omitempty" db:"promo_code"`
@@ -155,8 +155,8 @@ type MasterBooking struct {
 	TransportBookings []TransportBooking `json:"transport_bookings,omitempty" db:"-"`
 
 	// Refund
-	RefundAmount    float64    `json:"refund_amount" db:"refund_amount"`
-	RefundReference *string    `json:"refund_reference,omitempty" db:"refund_reference"`
+	RefundAmount    float64 `json:"refund_amount" db:"refund_amount"`
+	RefundReference *string `json:"refund_reference,omitempty" db:"refund_reference"`
 
 	// Metadata
 	BookingSource    BookingSource `json:"booking_source" db:"booking_source"`
@@ -169,7 +169,8 @@ type MasterBooking struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 
 	// Related data (not in DB, populated by queries)
-	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"`
+	BusBooking     *BusBooking     `json:"bus_booking,omitempty" db:"-"` // First/legacy
+	BusBookings    []*BusBooking   `json:"bus_bookings,omitempty" db:"-"`
 	LoungeBookings []LoungeBooking `json:"lounge_bookings,omitempty" db:"-"`
 }
 
@@ -214,6 +215,8 @@ type BusBooking struct {
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+
+	IsReturn bool `json:"is_return" db:"is_return"`
 
 	// Related data (populated via JOINs for display)
 	Seats []BusBookingSeat `json:"seats,omitempty" db:"-"`
@@ -355,10 +358,11 @@ type CancelAppBookingRequest struct {
 
 // BookingResponse is the response after creating a booking
 type BookingResponse struct {
-	Booking    *MasterBooking   `json:"booking"`
-	BusBooking *BusBooking      `json:"bus_booking,omitempty"`
-	Seats      []BusBookingSeat `json:"seats,omitempty"`
-	QRCode     string           `json:"qr_code,omitempty"`
+	Booking     *MasterBooking   `json:"booking"`
+	BusBooking  *BusBooking      `json:"bus_booking,omitempty"` // For backward compatibility
+	BusBookings []*BusBooking    `json:"bus_bookings,omitempty"`
+	Seats       []BusBookingSeat `json:"seats,omitempty"`
+	QRCode      string           `json:"qr_code,omitempty"`
 }
 
 // BookingListItem is a summary for listing bookings
@@ -378,7 +382,7 @@ type BookingListItem struct {
 	NumberOfSeats     *int              `json:"number_of_seats,omitempty" db:"number_of_seats"`
 	BusStatus         *BusBookingStatus `json:"bus_status,omitempty" db:"bus_status"`
 	QRCodeData        *string           `json:"qr_code_data,omitempty" db:"qr_code_data"`
-	
+
 	// Search Data
 	SearchFromLounge *string `json:"search_from_lounge,omitempty" db:"search_from_lounge"`
 	SearchToLounge   *string `json:"search_to_lounge,omitempty" db:"search_to_lounge"`

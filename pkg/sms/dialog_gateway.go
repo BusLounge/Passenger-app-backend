@@ -90,10 +90,10 @@ type SendSMSResponse struct {
 	Status  string `json:"status"`
 	Comment string `json:"comment"`
 	Data    struct {
-		CampaignID         int     `json:"campaignId"`
-		CampaignCost       float64 `json:"campaignCost"`
-		WalletBalance      float64 `json:"walletBalance"`
-		DuplicatesRemoved  int     `json:"duplicatesRemoved"`
+		CampaignID         int         `json:"campaignId"`
+		CampaignCost       float64     `json:"campaignCost"`
+		WalletBalance      interface{} `json:"walletBalance"`
+		DuplicatesRemoved  int         `json:"duplicatesRemoved"`
 		InvalidNumbers     int     `json:"invalidNumbers"`
 		MaskBlockedNumbers int     `json:"mask_blocked_numbers"`
 	} `json:"data"`
@@ -130,7 +130,7 @@ func (d *DialogGateway) GetAccessToken() error {
 		return fmt.Errorf("failed to marshal login request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/login", d.apiURL)
+	url := fmt.Sprintf("%s/user/login", d.apiURL)
 	fmt.Printf("🌐 Login URL: %s\n", url)
 	fmt.Printf("👤 Username: %s\n", d.username)
 	fmt.Printf("🔑 Password: %s (length: %d)\n", strings.Repeat("*", len(d.password)), len(d.password))
@@ -266,15 +266,23 @@ func (d *DialogGateway) SendOTP(phone, otpCode, appType string) (int64, error) {
 		appHash = d.passengerAppHash
 	}
 
-	// Prepare SMS message with app hash for Android SMS auto-read
+	// Prepare SMS message with app hash for Android SMS Retriever API auto-read.
+	//
+	// CRITICAL FORMAT RULES (https://developers.google.com/identity/sms-retriever/verify):
+	//   1. Message MUST start with "<#> " — this is the trigger Android uses to route
+	//      the SMS to the SMS Retriever API. Without it, the SMS is ignored entirely.
+	//   2. The app hash MUST be the LAST line of the message, with NOTHING after it.
+	//   3. Total message length MUST be under 140 bytes.
+	//   4. No blank lines between the OTP text and the hash.
+	//
+	// This is the exact format used by WhatsApp, Uber, PickMe, etc.
 	var message string
 	if appHash != "" {
-		// Format for Android SMS auto-read:
-		// OTP code followed by message and app hash on a new line
-		message = fmt.Sprintf("Your SmartTransit OTP is: %s\n\nPlease use the above OTP to complete your action.\n\nRegards,\nSmartTransit\n%s", otpCode, appHash)
+		// Correct format: <#> prefix, OTP, newline, hash as last line
+		message = fmt.Sprintf("<#> %s is your SmartTransit OTP.\n%s", otpCode, appHash)
 	} else {
-		// Fallback message without app hash
-		message = fmt.Sprintf("Your OTP is %s. Valid for 5 minutes. Do not share this code with anyone.", otpCode)
+		// Fallback message without app hash (User Consent API will be used on client)
+		message = fmt.Sprintf("Your OTP is %s. Valid for 5 minutes.", otpCode)
 	}
 
 	// Prepare request

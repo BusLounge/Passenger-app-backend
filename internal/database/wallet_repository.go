@@ -41,6 +41,9 @@ func NewWalletRepository(db *sqlx.DB) WalletRepository {
 			description TEXT,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
+
+		ALTER TABLE wallet_transactions_passenger ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'COMPLETED';
+		ALTER TABLE wallet_transactions_passenger ADD COLUMN IF NOT EXISTS reference_id UUID;
 	`)
 	if err != nil {
 		fmt.Printf("Warning: failed to auto-initialize wallet tables: %v\n", err)
@@ -51,14 +54,14 @@ func NewWalletRepository(db *sqlx.DB) WalletRepository {
 
 func (r *walletRepository) GetWalletByUserID(userID uuid.UUID) (*models.Wallet, error) {
 	var wallet models.Wallet
-	err := r.db.Get(&wallet, "SELECT * FROM wallets_passenger WHERE user_id = $1", userID)
+	err := r.db.Get(&wallet, "SELECT id, user_id, CAST(balance AS FLOAT) as balance, status, created_at, updated_at FROM wallets_passenger WHERE user_id = $1", userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Auto-create wallet for user on first access
 			err = r.db.QueryRowx(`
 				INSERT INTO wallets_passenger (user_id, balance, status)
 				VALUES ($1, 0, 'ACTIVE')
-				RETURNING *
+				RETURNING id, user_id, CAST(balance AS FLOAT) as balance, status, created_at, updated_at
 			`, userID).StructScan(&wallet)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create wallet: %v", err)
@@ -73,7 +76,9 @@ func (r *walletRepository) GetWalletByUserID(userID uuid.UUID) (*models.Wallet, 
 func (r *walletRepository) GetWalletTransactions(walletID uuid.UUID) ([]models.WalletTransaction, error) {
 	var transactions []models.WalletTransaction
 	err := r.db.Select(&transactions, `
-		SELECT * FROM wallet_transactions_passenger 
+		SELECT id, wallet_id, CAST(amount AS FLOAT) as amount, transaction_type, reference_type, 
+		       reference_id, gateway_reference, description, status, created_at 
+		FROM wallet_transactions_passenger 
 		WHERE wallet_id = $1 
 		ORDER BY created_at DESC 
 		LIMIT 50

@@ -109,11 +109,11 @@ func (r *AppBookingRepository) GenerateBusBookingQR() (string, error) {
 // MASTER BOOKING OPERATIONS
 // ============================================================================
 
-// CreateBooking creates a new master booking with bus booking and seats in a transaction
+// CreateBooking creates a new master booking and multiple bus bookings and seats in a transaction
 func (r *AppBookingRepository) CreateBooking(
 	booking *models.MasterBooking,
-	busBooking *models.BusBooking,
-	seats []models.BusBookingSeat,
+	busBookings []*models.BusBooking,
+	multipleSeats [][]models.BusBookingSeat,
 	tripSeatRepo *TripSeatRepository,
 ) (*models.BookingResponse, error) {
 	tx, err := r.db.Beginx()
@@ -130,7 +130,6 @@ func (r *AppBookingRepository) CreateBooking(
 	booking.BookingReference = bookingRef
 
 	// 2. Insert master booking
-	// Handle device_info JSON serialization
 	var deviceInfoJSON interface{}
 	if booking.DeviceInfo != nil && len(booking.DeviceInfo) > 0 {
 		jsonBytes, err := json.Marshal(booking.DeviceInfo)
@@ -169,90 +168,92 @@ func (r *AppBookingRepository) CreateBooking(
 		return nil, fmt.Errorf("failed to create booking: %w", err)
 	}
 
-	// 3. Generate QR code for bus booking (use Go function, not DB function)
-	qrCode, err := r.GenerateBusBookingQR()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate QR code: %w", err)
-	}
-	busBooking.QRCodeData = &qrCode
-	now := time.Now()
-	busBooking.QRGeneratedAt = &now
+	allCreatedSeats := make([]models.BusBookingSeat, 0)
+	var firstQRCode string
 
-	// 4. Insert bus booking (normalized - no duplicate columns)
-	busBooking.BookingID = booking.ID
+	for idx, busBooking := range busBookings {
+		seats := multipleSeats[idx]
 
-	// Validate scheduled_trip_id is not empty (prevents uuid syntax error)
-	if busBooking.ScheduledTripID == "" {
-		return nil, fmt.Errorf("failed to create bus booking: scheduled_trip_id is empty — cannot insert into UUID column")
-	}
+		qrCode, err := r.GenerateBusBookingQR()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate QR code: %w", err)
+		}
+		if idx == 0 {
+			firstQRCode = qrCode
+		}
+		busBooking.QRCodeData = &qrCode
+		now := time.Now()
+		busBooking.QRGeneratedAt = &now
 
-	busBookingQuery := `
-		INSERT INTO bus_bookings (
-			booking_id, scheduled_trip_id,
-			boarding_stop_id, alighting_stop_id,
-			number_of_seats, fare_per_seat, total_fare,
-			status, qr_code_data, qr_generated_at, special_requests
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-		) RETURNING id, created_at, updated_at`
+		busBooking.BookingID = booking.ID
 
-	err = tx.QueryRowx(busBookingQuery,
-		busBooking.BookingID, busBooking.ScheduledTripID,
-		nullableUUID(busBooking.BoardingStopID), nullableUUID(busBooking.AlightingStopID),
-		busBooking.NumberOfSeats, busBooking.FarePerSeat, busBooking.TotalFare,
-		busBooking.Status, busBooking.QRCodeData, busBooking.QRGeneratedAt, busBooking.SpecialRequests,
-	).Scan(&busBooking.ID, &busBooking.CreatedAt, &busBooking.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create bus booking: %w", err)
-	}
-
-	// 5. Insert bus booking seats (normalized - seat info comes from trip_seats) and update trip_seats
-	createdSeats := make([]models.BusBookingSeat, 0, len(seats))
-	for i := range seats {
-		seats[i].BusBookingID = busBooking.ID
-		seats[i].ScheduledTripID = busBooking.ScheduledTripID
-
-		// Validate seat's scheduled_trip_id before insert
-		if seats[i].ScheduledTripID == "" {
-			return nil, fmt.Errorf("failed to create seat booking for seat %s: scheduled_trip_id is empty", seats[i].SeatNumber)
+		if busBooking.ScheduledTripID == "" {
+			return nil, fmt.Errorf("failed to create bus booking %d: scheduled_trip_id is empty", idx)
 		}
 
-		seatQuery := `
-			INSERT INTO bus_booking_seats (
-				bus_booking_id, scheduled_trip_id, trip_seat_id,
-				passenger_name, passenger_phone, passenger_email,
-				passenger_gender, passenger_nic,
-				is_primary_passenger, status
+		busBookingQuery := `
+			INSERT INTO bus_bookings (
+				booking_id, scheduled_trip_id,
+				boarding_stop_id, alighting_stop_id,
+				number_of_seats, fare_per_seat, total_fare,
+				status, qr_code_data, qr_generated_at, special_requests
 			) VALUES (
-				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 			) RETURNING id, created_at, updated_at`
 
-		err = tx.QueryRowx(seatQuery,
-			seats[i].BusBookingID, seats[i].ScheduledTripID, nullableUUID(seats[i].TripSeatID),
-			seats[i].PassengerName, seats[i].PassengerPhone, seats[i].PassengerEmail,
-			seats[i].PassengerGender, seats[i].PassengerNIC,
-			seats[i].IsPrimaryPassenger, seats[i].Status,
-		).Scan(&seats[i].ID, &seats[i].CreatedAt, &seats[i].UpdatedAt)
+		err = tx.QueryRowx(busBookingQuery,
+			busBooking.BookingID, busBooking.ScheduledTripID,
+			nullableUUID(busBooking.BoardingStopID), nullableUUID(busBooking.AlightingStopID),
+			busBooking.NumberOfSeats, busBooking.FarePerSeat, busBooking.TotalFare,
+			busBooking.Status, busBooking.QRCodeData, busBooking.QRGeneratedAt, busBooking.SpecialRequests,
+		).Scan(&busBooking.ID, &busBooking.CreatedAt, &busBooking.UpdatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create seat booking for seat %s: %w", seats[i].SeatNumber, err)
+			return nil, fmt.Errorf("failed to create bus booking %d: %w", idx, err)
 		}
 
-		// Update trip_seats to mark as booked (trigger should handle this, but let's be explicit)
-		if seats[i].TripSeatID != nil {
-			_, err = tx.Exec(`
-				UPDATE trip_seats 
-				SET status = 'booked', 
-				    booking_type = 'app', 
-				    bus_booking_seat_id = $1,
-				    updated_at = now()
-				WHERE id = $2`,
-				seats[i].ID, *seats[i].TripSeatID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update trip seat %s: %w", seats[i].SeatNumber, err)
+		for i := range seats {
+			seats[i].BusBookingID = busBooking.ID
+			seats[i].ScheduledTripID = busBooking.ScheduledTripID
+
+			if seats[i].ScheduledTripID == "" {
+				return nil, fmt.Errorf("failed to create seat booking for seat %s: scheduled_trip_id is empty", seats[i].SeatNumber)
 			}
-		}
 
-		createdSeats = append(createdSeats, seats[i])
+			seatQuery := `
+				INSERT INTO bus_booking_seats (
+					bus_booking_id, scheduled_trip_id, trip_seat_id,
+					passenger_name, passenger_phone, passenger_email,
+					passenger_gender, passenger_nic,
+					is_primary_passenger, status
+				) VALUES (
+					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+				) RETURNING id, created_at, updated_at`
+
+			err = tx.QueryRowx(seatQuery,
+				seats[i].BusBookingID, seats[i].ScheduledTripID, nullableUUID(seats[i].TripSeatID),
+				seats[i].PassengerName, seats[i].PassengerPhone, seats[i].PassengerEmail,
+				seats[i].PassengerGender, seats[i].PassengerNIC,
+				seats[i].IsPrimaryPassenger, seats[i].Status,
+			).Scan(&seats[i].ID, &seats[i].CreatedAt, &seats[i].UpdatedAt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create seat booking for seat %s: %w", seats[i].SeatNumber, err)
+			}
+
+			if seats[i].TripSeatID != nil {
+				_, err = tx.Exec(`
+					UPDATE trip_seats 
+					SET status = 'booked', 
+					    booking_type = 'app', 
+					    bus_booking_seat_id = $1,
+					    updated_at = now()
+					WHERE id = $2`,
+					seats[i].ID, *seats[i].TripSeatID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to update trip seat %s: %w", seats[i].SeatNumber, err)
+				}
+			}
+			allCreatedSeats = append(allCreatedSeats, seats[i])
+		}
 	}
 
 	// Commit transaction
@@ -260,11 +261,17 @@ func (r *AppBookingRepository) CreateBooking(
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	var firstBusBooking *models.BusBooking
+	if len(busBookings) > 0 {
+		firstBusBooking = busBookings[0]
+	}
+
 	return &models.BookingResponse{
-		Booking:    booking,
-		BusBooking: busBooking,
-		Seats:      createdSeats,
-		QRCode:     qrCode,
+		Booking:     booking,
+		BusBooking:  firstBusBooking,
+		BusBookings: busBookings,
+		Seats:       allCreatedSeats,
+		QRCode:      firstQRCode,
 	}, nil
 }
 
@@ -369,9 +376,12 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 	query := `
 		SELECT 
 			b.id, b.booking_reference, b.booking_type,
-			b.total_amount, b.payment_status, b.booking_status,
-			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(b.total_amount, 0) as total_amount, 
+			COALESCE(b.payment_status, 'pending') as payment_status, 
+			COALESCE(b.booking_status, 'pending') as booking_status,
+			COALESCE(b.passenger_name, '') as passenger_name, b.created_at,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -382,6 +392,8 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		ORDER BY b.created_at DESC
 		LIMIT $2 OFFSET $3`
@@ -397,24 +409,42 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 	query := `
 		SELECT 
 			b.id, b.booking_reference, b.booking_type,
-			b.total_amount, b.payment_status, b.booking_status,
-			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(b.total_amount, 0) as total_amount, 
+			COALESCE(b.payment_status, 'pending') as payment_status, 
+			COALESCE(b.booking_status, 'pending') as booking_status,
+			COALESCE(b.passenger_name, '') as passenger_name, b.created_at,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
-		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
+		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
+		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
-		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
-		  AND st.departure_datetime > NOW() AT TIME ZONE 'Asia/Colombo'
-		ORDER BY st.departure_datetime ASC
+		  AND (bb.status IS NULL OR bb.status NOT IN ('cancelled', 'completed', 'no_show'))
+		  AND (
+			  COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			  ) IS NULL
+			  OR
+			  COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			  ) > NOW() AT TIME ZONE 'Asia/Colombo' - INTERVAL '24 hours'
+		  )
+		ORDER BY departure_datetime ASC
 		LIMIT $2 OFFSET $3`
 
 	var bookings []models.BookingListItem
@@ -429,9 +459,13 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
@@ -440,10 +474,13 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND (
 			b.booking_status = 'completed'
 			OR bb.status = 'completed'
+			OR (b.booking_type = 'lounge_only' AND EXISTS(SELECT 1 FROM lounge_bookings lb WHERE lb.master_booking_id = b.id AND lb.status = 'completed'))
 		  )
 		ORDER BY b.created_at DESC
 		LIMIT $2 OFFSET $3`
@@ -462,9 +499,13 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, bb.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
@@ -473,6 +514,8 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('completed')
 		  AND (bb.status IS NULL OR bb.status NOT IN ('completed'))
@@ -498,7 +541,8 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			b.search_from_lounge, b.search_to_lounge,
+			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
@@ -509,6 +553,8 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
 		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
+		LEFT JOIN lounges lt ON b.search_to_lounge = lt.id::text
 		WHERE b.user_id = $1
 		  AND b.booking_status NOT IN ('cancelled', 'completed', 'partial_cancel')
 		  AND bb.status NOT IN ('cancelled', 'completed', 'no_show')
@@ -623,7 +669,7 @@ func (r *AppBookingRepository) CancelTransportBooking(transportID string, userID
 	if err != nil {
 		return err
 	}
-	
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err

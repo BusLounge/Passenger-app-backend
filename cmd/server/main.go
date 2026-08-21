@@ -603,10 +603,16 @@ func main() {
 			lounges.GET("/by-stop/:stopId", loungeHandler.GetLoungesByStop)
 			logger.Info("  ✅ GET /api/v1/lounges/by-route/:routeId (public)")
 			lounges.GET("/by-route/:routeId", loungeHandler.GetLoungesByRoute)
+			logger.Info("  ✅ GET /api/v1/lounges/by-multiple-routes (public)")
+			lounges.GET("/by-multiple-routes", loungeHandler.GetLoungesByMultipleRoutes)
+			logger.Info("  ✅ GET /api/v1/lounges/by-route-near (public)")
+			lounges.GET("/by-route-near", loungeHandler.GetLoungesByRouteNear)
 			logger.Info("  ✅ GET /api/v1/lounges/near-stop/:routeId/:stopId (public)")
 			lounges.GET("/near-stop/:routeId/:stopId", loungeHandler.GetLoungesNearStop)
 			// Using the 'near-stop' pattern to bypass Choreo gateway restrictions
 			lounges.GET("/near-stop/discovery/:id", loungeBookingHandler.GetLoungeTransportOptions)
+			logger.Info("  ✅ POST /api/v1/lounges/recommendation-stats (public)")
+			lounges.POST("/recommendation-stats", loungeBookingHandler.GetLoungeRecommendationStats)
 
 			// Protected routes (require JWT authentication)
 			loungesProtected := lounges.Group("")
@@ -888,7 +894,6 @@ func main() {
 			appBookings.GET("/:id/qr", appBookingHandler.GetBookingQR)
 		}
 		logger.Info("📱 App Booking routes registered successfully")
-
 
 		// ============================================================================
 		// ACTIVE TRIP TRACKING ROUTES (Passenger bus tracking)
