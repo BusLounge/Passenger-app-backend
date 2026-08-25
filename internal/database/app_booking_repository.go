@@ -295,10 +295,16 @@ func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterB
 		return nil, err
 	}
 
-	// Get bus booking if exists
+	// Get first bus booking for backward compatibility
 	busBooking, err := r.GetBusBookingByBookingID(bookingID)
 	if err == nil {
 		booking.BusBooking = busBooking
+	}
+
+	// Get all bus bookings (for transit/return trips)
+	busBookings, err := r.GetBusBookingsByBookingID(bookingID)
+	if err == nil && len(busBookings) > 0 {
+		booking.BusBookings = busBookings
 	}
 
 	// Get lounge bookings if exists
@@ -349,10 +355,16 @@ func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.
 		return nil, err
 	}
 
-	// Get bus booking if exists
+	// Get first bus booking for backward compatibility
 	busBooking, err := r.GetBusBookingByBookingID(booking.ID)
 	if err == nil {
 		booking.BusBooking = busBooking
+	}
+
+	// Get all bus bookings (for transit/return trips)
+	busBookings, err := r.GetBusBookingsByBookingID(booking.ID)
+	if err == nil && len(busBookings) > 0 {
+		booking.BusBookings = busBookings
 	}
 
 	// Get lounge bookings if exists
@@ -425,7 +437,11 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
+		LEFT JOIN (
+			SELECT DISTINCT ON (booking_id) * 
+			FROM bus_bookings 
+			ORDER BY booking_id, created_at ASC
+		) bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
 		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
@@ -471,7 +487,11 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
+		LEFT JOIN (
+			SELECT DISTINCT ON (booking_id) * 
+			FROM bus_bookings 
+			ORDER BY booking_id, created_at ASC
+		) bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
 		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
@@ -550,7 +570,11 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		INNER JOIN bus_bookings bb ON bb.booking_id = b.id
+		INNER JOIN (
+			SELECT DISTINCT ON (booking_id) * 
+			FROM bus_bookings 
+			ORDER BY booking_id, created_at ASC
+		) bb ON bb.booking_id = b.id
 		INNER JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
 		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
@@ -717,7 +741,7 @@ func (r *AppBookingRepository) GetBusBookingByID(busBookingID string) (*models.B
 	return busBooking, nil
 }
 
-// GetBusBookingByBookingID retrieves bus booking by master booking ID with JOINs for denormalized data
+// GetBusBookingByBookingID retrieves the first bus booking by master booking ID with JOINs for denormalized data
 func (r *AppBookingRepository) GetBusBookingByBookingID(bookingID string) (*models.BusBooking, error) {
 	busBooking := &models.BusBooking{}
 	query := `
@@ -728,9 +752,11 @@ func (r *AppBookingRepository) GetBusBookingByBookingID(bookingID string) (*mode
 		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
 		       bb.cancelled_at, bb.cancellation_reason,
 		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
-		       bb.created_at, bb.updated_at
+		       bb.created_at, bb.updated_at, COALESCE(bb.is_return, false) as is_return
 		FROM bus_bookings bb
-		WHERE bb.booking_id = $1`
+		WHERE bb.booking_id = $1
+		ORDER BY bb.created_at ASC
+		LIMIT 1`
 
 	err := r.db.Get(busBooking, query, bookingID)
 	if err != nil {
@@ -747,6 +773,41 @@ func (r *AppBookingRepository) GetBusBookingByBookingID(bookingID string) (*mode
 	}
 
 	return busBooking, nil
+}
+
+// GetBusBookingsByBookingID retrieves ALL bus bookings by master booking ID with JOINs for denormalized data
+func (r *AppBookingRepository) GetBusBookingsByBookingID(bookingID string) ([]*models.BusBooking, error) {
+	var busBookings []*models.BusBooking
+	query := `
+		SELECT bb.id, bb.booking_id, bb.scheduled_trip_id,
+		       bb.boarding_stop_id, bb.alighting_stop_id,
+		       bb.number_of_seats, bb.fare_per_seat, bb.total_fare,
+		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
+		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
+		       bb.cancelled_at, bb.cancellation_reason,
+		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
+		       bb.created_at, bb.updated_at, COALESCE(bb.is_return, false) as is_return
+		FROM bus_bookings bb
+		WHERE bb.booking_id = $1
+		ORDER BY bb.created_at ASC`
+
+	err := r.db.Select(&busBookings, query, bookingID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, busBooking := range busBookings {
+		// Get denormalized data via JOINs
+		r.populateBusBookingDetails(busBooking)
+
+		// Get seats
+		seats, err := r.GetSeatsByBusBookingID(busBooking.ID)
+		if err == nil {
+			busBooking.Seats = seats
+		}
+	}
+
+	return busBookings, nil
 }
 
 // GetBusBookingByQRCode retrieves bus booking by QR code

@@ -1051,7 +1051,7 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 	}
 
 	// Generate bookings for a payload (either forward or return)
-	processPayload := func(payload *models.BusIntentPayload, payloadFare float64) {
+	processPayload := func(payload *models.BusIntentPayload, payloadFare float64, isReturn bool) {
 		if len(payload.Legs) > 0 {
 			// Calculate total raw price for scaling
 			var rawTotal float64
@@ -1080,6 +1080,7 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 					FarePerSeat:     0,
 					TotalFare:       scaledFare,
 					Status:          models.BusBookingConfirmed,
+					IsReturn:        isReturn,
 				}
 				if len(leg.Seats) > 0 {
 					book.FarePerSeat = scaledFare / float64(len(leg.Seats))
@@ -1115,6 +1116,7 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 				FarePerSeat:     0,
 				TotalFare:       payloadFare,
 				Status:          models.BusBookingConfirmed,
+				IsReturn:        isReturn,
 			}
 			if len(payload.Seats) > 0 {
 				book.FarePerSeat = payloadFare / float64(len(payload.Seats))
@@ -1144,11 +1146,11 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 	}
 
 	// 1. Departure Bus Bookings
-	processPayload(busIntent, departureFare)
+	processPayload(busIntent, departureFare, false)
 
 	// 2. Return Bus Bookings (if any)
 	if busIntent.ReturnTrip != nil {
-		processPayload(busIntent.ReturnTrip, intent.PricingSnapshot.ReturnBusFare)
+		processPayload(busIntent.ReturnTrip, intent.PricingSnapshot.ReturnBusFare, true)
 	}
 
 	// Create booking
