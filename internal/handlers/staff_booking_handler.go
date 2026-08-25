@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/smarttransit/sms-auth-backend/internal/database"
 	"github.com/smarttransit/sms-auth-backend/internal/middleware"
+	"github.com/smarttransit/sms-auth-backend/internal/models"
 )
 
 // StaffBookingHandler handles conductor/driver booking operations
@@ -55,11 +56,36 @@ func (h *StaffBookingHandler) VerifyBookingByQR(c *gin.Context) {
 	busBooking, err := h.bookingRepo.GetBusBookingByQRCode(req.QRCode)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Booking not found"})
+			// Fallback: try to resolve as a Master Booking Reference
+			masterBooking, mErr := h.bookingRepo.GetBookingByReference(req.QRCode)
+			if mErr == nil && masterBooking != nil {
+				busBookings, bErr := h.bookingRepo.GetBusBookingsByBookingID(masterBooking.ID)
+				if bErr == nil && len(busBookings) > 0 {
+					var matchedLeg *models.BusBooking
+					// Pick the first un-checked-in un-completed leg
+					for _, b := range busBookings {
+						if b.Status == "booked" && b.CheckedInAt == nil {
+							matchedLeg = b
+							break
+						}
+					}
+					if matchedLeg == nil {
+						matchedLeg = busBookings[len(busBookings)-1]
+					}
+					busBooking = matchedLeg
+					err = nil
+				}
+			}
+
+			// If still unresolved, return not found
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Booking not found"})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify booking", "details": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify booking"})
-		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
