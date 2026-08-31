@@ -47,7 +47,9 @@ type PaymentConfig struct {
 	MerchantToken string // PAYable merchant token (SECRET - never expose to client)
 	LogoURL       string // Merchant logo URL for payment page
 	ReturnURL     string // URL to redirect after payment (app deep link)
-	WebhookURL    string // Server webhook URL for payment notifications
+	WebhookURL            string // Server webhook URL for payment notifications
+	PayHereMerchantID     string // PayHere Sandbox/Live Merchant ID
+	PayHereMerchantSecret string // PayHere Sandbox/Live Merchant Secret
 }
 
 // ServerConfig holds server-related configuration
@@ -183,7 +185,9 @@ func Load() (*Config, error) {
 			MerchantToken: getEnv("PAYABLE_MERCHANT_TOKEN", ""),
 			LogoURL:       getEnv("PAYABLE_LOGO_URL", ""),
 			ReturnURL:     getEnv("PAYABLE_RETURN_URL", ""),
-			WebhookURL:    getEnv("PAYABLE_WEBHOOK_URL", ""),
+			WebhookURL:            getEnv("PAYABLE_WEBHOOK_URL", ""),
+			PayHereMerchantID:     getEnv("PAYHERE_MERCHANT_ID", ""),
+			PayHereMerchantSecret: getEnv("PAYHERE_MERCHANT_SECRET", ""),
 		},
 	}
 

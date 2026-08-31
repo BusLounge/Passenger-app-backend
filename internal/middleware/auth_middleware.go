@@ -27,6 +27,11 @@ func AuthMiddleware(jwtService *jwt.Service) gin.HandlerFunc {
 		// Get Authorization header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			// Fallback for Choreo/WSO2 API Gateway stripping standard Authorization headers
+			authHeader = c.GetHeader("X-App-Authorization")
+		}
+
+		if authHeader == "" {
 			log.Printf("AUTH FAILED: Missing authorization header - Path: %s, IP: %s", c.Request.URL.Path, c.ClientIP())
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error":   "unauthorized",
