@@ -364,6 +364,7 @@ func main() {
 		loungeRepository,
 		busOwnerRouteRepo,
 		transportBookingRepo,
+		passengerRepository,
 		payableService,
 		walletService,
 		smsGateway,

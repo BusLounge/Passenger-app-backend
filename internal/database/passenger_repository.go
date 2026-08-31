@@ -284,8 +284,20 @@ func (r *PassengerRepository) IncrementTotalTrips(userID uuid.UUID) error {
 	return nil
 }
 
-// AddLoyaltyPoints adds loyalty points to passenger
-func (r *PassengerRepository) AddLoyaltyPoints(userID uuid.UUID, points int) error {
+// AddLoyaltyPoints adds loyalty points to passenger and logs it to the ledger
+func (r *PassengerRepository) AddLoyaltyPoints(userID uuid.UUID, points int, bookingRef string) error {
+	// 1. Ensure the ledger table exists
+	_, _ = r.db.Exec(`
+		CREATE TABLE IF NOT EXISTS passenger_loyalty_ledger (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID NOT NULL,
+			booking_id VARCHAR(255) NOT NULL,
+			points INT NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+
+	// 2. Add points to passenger
 	query := `
 		UPDATE passengers
 		SET loyalty_points = loyalty_points + $1,
@@ -296,6 +308,16 @@ func (r *PassengerRepository) AddLoyaltyPoints(userID uuid.UUID, points int) err
 	_, err := r.db.Exec(query, points, time.Now(), userID)
 	if err != nil {
 		return fmt.Errorf("failed to add loyalty points: %w", err)
+	}
+
+	// 3. Insert ledger record for Flutter app visualization
+	insertLedger := `
+		INSERT INTO passenger_loyalty_ledger (user_id, booking_id, points)
+		VALUES ($1, $2, $3)
+	`
+	_, err = r.db.Exec(insertLedger, userID, bookingRef, points)
+	if err != nil {
+		return fmt.Errorf("failed to log loyalty transaction to ledger: %w", err)
 	}
 
 	return nil

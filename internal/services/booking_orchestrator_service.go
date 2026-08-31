@@ -41,6 +41,7 @@ type BookingOrchestratorService struct {
 	loungeRepo           *database.LoungeRepository
 	busOwnerRouteRepo    *database.BusOwnerRouteRepository
 	transportBookingRepo *database.TransportBookingRepository
+	passengerRepo        *database.PassengerRepository
 	payableService       *PAYableService
 	walletService        *WalletService
 	smsGateway           sms.SMSGateway
@@ -58,6 +59,7 @@ func NewBookingOrchestratorService(
 	loungeRepo *database.LoungeRepository,
 	busOwnerRouteRepo *database.BusOwnerRouteRepository,
 	transportBookingRepo *database.TransportBookingRepository,
+	passengerRepo *database.PassengerRepository,
 	payableService *PAYableService,
 	walletService *WalletService,
 	smsGateway sms.SMSGateway,
@@ -73,6 +75,7 @@ func NewBookingOrchestratorService(
 		loungeRepo:           loungeRepo,
 		busOwnerRouteRepo:    busOwnerRouteRepo,
 		transportBookingRepo: transportBookingRepo,
+		passengerRepo:        passengerRepo,
 		payableService:       payableService,
 		walletService:        walletService,
 		smsGateway:           smsGateway,
@@ -960,6 +963,16 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 
 	// 11. Refresh intent to get booking IDs
 	intent, _ = s.intentRepo.GetIntentByID(intentID)
+
+	// 12. Award loyalty points based on total amount (1 point per 100 LKR spent)
+	pointsToAward := int(intent.TotalAmount / 100)
+	if pointsToAward > 0 {
+		if err := s.passengerRepo.AddLoyaltyPoints(userID, pointsToAward, masterRef); err != nil {
+			s.logger.WithError(err).Error("Failed to award loyalty points")
+		} else {
+			s.logger.WithField("points", pointsToAward).Info("Loyalty points awarded successfully")
+		}
+	}
 
 	s.logger.WithFields(logrus.Fields{
 		"intent_id":                 intentID,
