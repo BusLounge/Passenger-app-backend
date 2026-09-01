@@ -945,24 +945,45 @@ func (h *BookingOrchestratorHandler) PayHereWebhook(c *gin.Context) {
 	}
 
 	// 3. Route to Wallet TopUp or Booking Confirmation
-	if strings.HasPrefix(payload.OrderID, "WAL-") {
-		// Attempt to use custom_1 (User ID) if passed by app to identify user.
-		// Alternatively, you can do a DB lookup here. 
-		// For E-Wallet TopUp, we'll try to find the UserID from a repository if custom_1 isn't directly a UUID.
-		userID, err := uuid.Parse(payload.Custom1)
+	// Wallet top-up orders use "WAL-" prefix.
+	// custom_1 carries a descriptive tag ("wallet_topup") and custom_2 carries the User UUID.
+	isWalletTopUp := strings.HasPrefix(payload.OrderID, "WAL-") || payload.Custom1 == "wallet_topup"
+	if isWalletTopUp {
+		// Try custom_2 first (preferred — stores the actual User UUID), then fall back to custom_1
+		userIDStr := payload.Custom2
+		if userIDStr == "" {
+			userIDStr = payload.Custom1
+		}
+
+		userID, err := uuid.Parse(userIDStr)
 		if err != nil {
-			h.logger.Error("PayHere Webhook: Missing or invalid UserID in Custom1 for Wallet TopUp")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid UserID in payload"})
+			h.logger.WithFields(logrus.Fields{
+				"order_id": payload.OrderID,
+				"custom_1": payload.Custom1,
+				"custom_2": payload.Custom2,
+			}).Error("PayHere Webhook: Missing or invalid UserID for Wallet TopUp (expected UUID in custom_2)")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing UserID in webhook payload"})
 			return
 		}
 
 		err = h.walletService.ConfirmTopUp(userID, payload.PayHereAmount, payload.PaymentID)
 		if err != nil {
-			h.logger.WithError(err).Error("Failed to confirm wallet top-up from PayHere Webhook")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to topup"})
+			h.logger.WithError(err).WithFields(logrus.Fields{
+				"order_id": payload.OrderID,
+				"user_id":  userID,
+				"amount":   payload.PayHereAmount,
+			}).Error("Failed to confirm wallet top-up from PayHere Webhook")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process wallet top-up"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "Wallet TopUp successful"})
+
+		h.logger.WithFields(logrus.Fields{
+			"order_id":   payload.OrderID,
+			"user_id":    userID,
+			"amount":     payload.PayHereAmount,
+			"payment_id": payload.PaymentID,
+		}).Info("Wallet top-up confirmed via PayHere IPN")
+		c.JSON(http.StatusOK, gin.H{"message": "Wallet top-up successful"})
 		return
 	}
 	

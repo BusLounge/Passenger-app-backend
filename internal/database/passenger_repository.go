@@ -85,7 +85,23 @@ func (r *PassengerRepository) GetPassengerByUserID(userID uuid.UUID) (*models.Pa
 	return &passenger, nil
 }
 
-// GetPassengerByID retrieves a passenger by ID
+// GetUserPhone fetches the phone number for a given user ID from the users table.
+// Used by the low-balance notification system without loading the full passenger struct.
+func (r *PassengerRepository) GetUserPhone(userID uuid.UUID) (string, error) {
+	var phone string
+	err := r.db.QueryRow(
+		"SELECT phone FROM users WHERE id = $1",
+		userID,
+	).Scan(&phone)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get user phone: %w", err)
+	}
+	return phone, nil
+}
+
 func (r *PassengerRepository) GetPassengerByID(id uuid.UUID) (*models.Passenger, error) {
 	var passenger models.Passenger
 

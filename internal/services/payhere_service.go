@@ -46,15 +46,33 @@ func NewPayHereService(merchantID, merchantSecret string, logger *logrus.Logger)
 	}
 }
 
-// GenerateHash generates the PayHere md5 verification hash
+// GenerateClientHash generates the PayHere md5 hash for the CHECKOUT REQUEST
+// Formula: UPPERCASE(MD5(merchant_id + order_id + amount + currency + UPPERCASE(MD5(merchant_secret))))
+// This is different from the webhook verification hash (which also includes status_code).
+func (s *PayHereService) GenerateClientHash(orderID string, amount float64, currency string) string {
+	amountFormatted := fmt.Sprintf("%.2f", amount)
+
+	secretHash := md5.Sum([]byte(s.merchantSecret))
+	upperSecretHash := strings.ToUpper(hex.EncodeToString(secretHash[:]))
+
+	dataString := s.merchantID + orderID + amountFormatted + currency + upperSecretHash
+
+	finalHash := md5.Sum([]byte(dataString))
+	return strings.ToUpper(hex.EncodeToString(finalHash[:]))
+}
+
+// GetMerchantID returns the configured merchant ID (safe to expose to client)
+func (s *PayHereService) GetMerchantID() string {
+	return s.merchantID
+}
+// GenerateHash generates the PayHere md5 verification hash for WEBHOOK verification
+// Formula: UPPERCASE(MD5(merchant_id + order_id + payhere_amount + payhere_currency + status_code + UPPERCASE(MD5(merchant_secret))))
 func (s *PayHereService) GenerateHash(orderID string, amount float64, currency string, statusCode int) string {
-	// Formula: md5sig = UPPERCASE(MD5(merchant_id + order_id + payhere_amount + payhere_currency + status_code + UPPERCASE(MD5(merchant_secret))))
-	
 	amountFormatted := fmt.Sprintf("%.2f", amount) // Must be formatted to 2 decimal places as received
-	
+
 	secretHash1 := md5.Sum([]byte(s.merchantSecret))
 	upperSecretHash := strings.ToUpper(hex.EncodeToString(secretHash1[:]))
-	
+
 	dataString := fmt.Sprintf("%s%s%s%s%d%s",
 		s.merchantID,
 		orderID,
@@ -63,7 +81,7 @@ func (s *PayHereService) GenerateHash(orderID string, amount float64, currency s
 		statusCode,
 		upperSecretHash,
 	)
-	
+
 	finalHash := md5.Sum([]byte(dataString))
 	return strings.ToUpper(hex.EncodeToString(finalHash[:]))
 }

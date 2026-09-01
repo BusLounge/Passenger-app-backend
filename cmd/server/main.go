@@ -313,8 +313,8 @@ func main() {
 	// Initialize Wallet system first, as App Booking needs it for UI payments
 	logger.Info("💰 Initializing Wallet system...")
 	walletRepository := database.NewWalletRepository(sqlxDB.DB)
-	walletService := services.NewWalletService(walletRepository, logger)
-	walletHandler := handlers.NewWalletHandler(walletService, logger)
+	walletService := services.NewWalletService(walletRepository, passengerRepository, smsGateway, 500.0, logger)
+	logger.Info("✓ Wallet system initialized")
 
 	// Initialize App Booking system (passenger app bookings)
 	logger.Info("Initializing app booking system...")
@@ -352,8 +352,11 @@ func main() {
 	}
 
 	// Initialize PayHere service
-	payhereService := services.NewPayHereService("", "", logger)
+	payhereService := services.NewPayHereService(cfg.Payment.PayHereMerchantID, cfg.Payment.PayHereMerchantSecret, logger)
 	logger.Info("✓ PayHere Webhook service initialized")
+
+	// Initialize Wallet handler here (needs payhereService, declared above)
+	walletHandler := handlers.NewWalletHandler(walletService, payhereService, logger)
 
 	bookingOrchestratorService := services.NewBookingOrchestratorService(
 		bookingIntentRepo,
@@ -976,6 +979,8 @@ func main() {
 			wallet.GET("", walletHandler.GetWallet)
 			logger.Info("  ✅ POST /api/v1/wallet/topup/confirm - Confirm TopUp directly")
 			wallet.POST("/topup/confirm", walletHandler.ConfirmTopUp)
+			logger.Info("  ✅ GET /api/v1/wallet/topup/hash - Generate PayHere checkout hash server-side")
+			wallet.GET("/topup/hash", walletHandler.GetTopUpHash)
 		}
 		logger.Info("💰 Wallet routes registered successfully")
 

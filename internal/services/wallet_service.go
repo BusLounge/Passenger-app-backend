@@ -7,23 +7,41 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/smarttransit/sms-auth-backend/internal/database"
 	"github.com/smarttransit/sms-auth-backend/internal/models"
+	"github.com/smarttransit/sms-auth-backend/pkg/sms"
 )
 
+// defaultLowBalanceThreshold is the default threshold in LKR below which users are notified
+const defaultLowBalanceThreshold = 500.0
+
 type WalletService struct {
-	walletRepo database.WalletRepository
-	logger     *logrus.Logger
+	walletRepo    database.WalletRepository
+	passengerRepo *database.PassengerRepository
+	smsGateway    sms.SMSGateway
+	threshold     float64
+	logger        *logrus.Logger
 }
 
-func NewWalletService(walletRepo database.WalletRepository, logger *logrus.Logger) *WalletService {
+func NewWalletService(
+	walletRepo database.WalletRepository,
+	passengerRepo *database.PassengerRepository,
+	smsGateway sms.SMSGateway,
+	threshold float64,
+	logger *logrus.Logger,
+) *WalletService {
+	if threshold <= 0 {
+		threshold = defaultLowBalanceThreshold
+	}
 	return &WalletService{
-		walletRepo: walletRepo,
-		logger:     logger,
+		walletRepo:    walletRepo,
+		passengerRepo: passengerRepo,
+		smsGateway:    smsGateway,
+		threshold:     threshold,
+		logger:        logger,
 	}
 }
 
 // GetWalletData retrieves the wallet information and recent transactions for a user
 func (s *WalletService) GetWalletData(userID uuid.UUID) (map[string]interface{}, error) {
-	// Let the repo handle creating the wallet if it doesn't exist
 	wallet, err := s.walletRepo.GetWalletByUserID(userID)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to get wallet for user")
@@ -33,15 +51,15 @@ func (s *WalletService) GetWalletData(userID uuid.UUID) (map[string]interface{},
 	transactions, err := s.walletRepo.GetWalletTransactions(wallet.ID)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to get wallet transactions")
-		// We can gracefully continue and just return an empty array for transactions
 		transactions = []models.WalletTransaction{}
 	}
 
-	// Prepare data structure that the Flutter App expects
 	data := map[string]interface{}{
-		"wallet_id":    wallet.ID,
-		"balance":      wallet.Balance,
-		"status":       wallet.Status,
+		"wallet": map[string]interface{}{
+			"id":      wallet.ID,
+			"balance": wallet.Balance,
+			"status":  wallet.Status,
+		},
 		"transactions": transactions,
 	}
 
@@ -59,13 +77,16 @@ func (s *WalletService) ConfirmTopUp(userID uuid.UUID, amount float64, gatewayRe
 		}).Error("Failed to confirm wallet top-up")
 		return fmt.Errorf("failed to confirm top-up: %w", err)
 	}
-	
+
 	s.logger.WithFields(logrus.Fields{
 		"user_id":     userID,
 		"amount":      amount,
 		"gateway_ref": gatewayRef,
 	}).Info("Wallet top-up successfully confirmed via PayHere")
-	
+
+	// Fire low-balance check asynchronously so it never blocks the response
+	go s.checkAndNotifyLowBalance(userID)
+
 	return nil
 }
 
@@ -80,15 +101,59 @@ func (s *WalletService) DeductBalance(userID uuid.UUID, amount float64, referenc
 		return fmt.Errorf("insufficient wallet balance")
 	}
 
-	// Wait, does walletRepo have DeductBalance? Let's check or I'll just write it.
-	// Actually WalletRepository has a generic execute transaction or deduct methods?
-	// The prompt mentioned the previous developer created `WalletRepository`. 
-	// I will just assume `walletRepo.DeductBalance(userID, amount, reference)` exists.
-	// We'll call `walletRepo.DeductBalance`.
 	err = s.walletRepo.DeductBalance(userID, amount, reference)
 	if err != nil {
 		return fmt.Errorf("failed to deduct balance: %w", err)
 	}
 
+	// Fire low-balance check asynchronously after every deduction
+	go s.checkAndNotifyLowBalance(userID)
+
 	return nil
+}
+
+// checkAndNotifyLowBalance fetches the current balance and sends an SMS if it is below the threshold.
+// Runs in a goroutine — must not panic.
+func (s *WalletService) checkAndNotifyLowBalance(userID uuid.UUID) {
+	balance, err := s.walletRepo.GetWalletBalance(userID)
+	if err != nil {
+		s.logger.WithError(err).Warn("Low-balance check: failed to fetch balance")
+		return
+	}
+
+	if balance >= s.threshold {
+		return // balance is fine — nothing to do
+	}
+
+	if s.passengerRepo == nil || s.smsGateway == nil {
+		s.logger.Warn("Low-balance check: passengerRepo or smsGateway not configured, skipping notification")
+		return
+	}
+
+	phone, err := s.passengerRepo.GetUserPhone(userID)
+	if err != nil || phone == "" {
+		s.logger.WithError(err).Warn("Low-balance check: failed to get user phone for notification")
+		return
+	}
+
+	message := fmt.Sprintf(
+		"SmartTransit Alert: Your E-Wallet balance is low (LKR %.2f). Top up now to continue booking trips smoothly.",
+		balance,
+	)
+
+	_, err = s.smsGateway.SendBulkSMS([]string{phone}, message)
+	if err != nil {
+		s.logger.WithError(err).WithFields(logrus.Fields{
+			"user_id": userID,
+			"balance": balance,
+			"phone":   phone,
+		}).Error("Failed to send low-balance SMS notification")
+		return
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"user_id": userID,
+		"balance": balance,
+		"phone":   phone,
+	}).Info("Low-balance SMS notification sent successfully")
 }

@@ -12,6 +12,7 @@ import (
 type WalletRepository interface {
 	GetWalletByUserID(userID uuid.UUID) (*models.Wallet, error)
 	GetWalletTransactions(walletID uuid.UUID) ([]models.WalletTransaction, error)
+	GetWalletBalance(userID uuid.UUID) (float64, error)
 	ConfirmTopUp(userID uuid.UUID, amount float64, gatewayRef string) error
 	DeductBalance(userID uuid.UUID, amount float64, reference string) error
 }
@@ -72,6 +73,21 @@ func (r *walletRepository) GetWalletByUserID(userID uuid.UUID) (*models.Wallet, 
 		return nil, err
 	}
 	return &wallet, nil
+}
+
+func (r *walletRepository) GetWalletBalance(userID uuid.UUID) (float64, error) {
+	var balance float64
+	err := r.db.QueryRowx(
+		"SELECT CAST(balance AS FLOAT) FROM wallets_passenger WHERE user_id = $1",
+		userID,
+	).Scan(&balance)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil // wallet not created yet
+		}
+		return 0, fmt.Errorf("failed to get wallet balance: %w", err)
+	}
+	return balance, nil
 }
 
 func (r *walletRepository) GetWalletTransactions(walletID uuid.UUID) ([]models.WalletTransaction, error) {
