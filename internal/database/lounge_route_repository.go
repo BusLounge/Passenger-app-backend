@@ -19,6 +19,12 @@ func NewLoungeRouteRepository(db *sqlx.DB) *LoungeRouteRepository {
 	return &LoungeRouteRepository{db: db}
 }
 
+// DB exposes the underlying *sqlx.DB so callers can run ad-hoc queries
+// (e.g. bulk-load with ANY($1)) without adding N+1 per-row calls.
+func (r *LoungeRouteRepository) DB() *sqlx.DB {
+	return r.db
+}
+
 // CreateLoungeRoute adds a new route to a lounge
 func (r *LoungeRouteRepository) CreateLoungeRoute(loungeRoute *models.LoungeRoute) error {
 	query := `

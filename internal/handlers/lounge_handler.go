@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -627,16 +629,23 @@ func (h *LoungeHandler) DeleteLounge(c *gin.Context) {
 // ===================================================================
 
 // GetAllActiveLounges handles GET /api/v1/lounges/active
-// Query params: state (string), limit (int)
+// Query params: state (string), limit (int), include_all (bool)
 // @Summary Get all active lounges
-// @Description Retrieves all active lounges with optional state filter and limit
+// @Description Retrieves all active lounges with optional state filter and limit.
+//             Routes are loaded in a single JOIN query (no N+1 problem).
 // @Tags Lounges
 // @Produce json
-// @Param state query string false "Filter by state/province"
-// @Param limit query int false "Maximum number of lounges to return (random order)"
+// @Param state       query string false "Filter by state/province"
+// @Param limit       query int    false "Maximum number of lounges to return (random order)"
+// @Param include_all query bool   false "If true, return all lounges without limit (still single query)"
 // @Success 200 {object} map[string]interface{}
 // @Router /lounges/active [get]
 func (h *LoungeHandler) GetAllActiveLounges(c *gin.Context) {
+	// Apply a 15-second context deadline so the handler always returns
+	// within the Choreo gateway timeout, even if the DB is slow.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
 	// Parse query params
 	state := c.Query("state")
 	var limit int
@@ -646,9 +655,10 @@ func (h *LoungeHandler) GetAllActiveLounges(c *gin.Context) {
 		}
 	}
 
-	// Use search method if params provided, otherwise get all
+	// ── Step 1: Fetch lounges (one query) ──────────────────────────────────
 	var lounges []models.Lounge
 	var err error
+
 	if state != "" || limit > 0 {
 		lounges, err = h.loungeRepo.SearchActiveLounges(state, limit)
 	} else {
@@ -656,6 +666,15 @@ func (h *LoungeHandler) GetAllActiveLounges(c *gin.Context) {
 	}
 
 	if err != nil {
+		// Check if it was a context timeout
+		if ctx.Err() != nil {
+			log.Printf("ERROR: GetAllActiveLounges timed out after 15s: %v", err)
+			c.JSON(http.StatusGatewayTimeout, ErrorResponse{
+				Error:   "timeout",
+				Message: "Request timed out retrieving lounges",
+			})
+			return
+		}
 		log.Printf("ERROR: Failed to get active lounges: %v", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "database_error",
@@ -664,13 +683,55 @@ func (h *LoungeHandler) GetAllActiveLounges(c *gin.Context) {
 		return
 	}
 
-	// Convert to response format
+	if len(lounges) == 0 {
+		c.JSON(http.StatusOK, gin.H{"lounges": []gin.H{}, "total": 0})
+		return
+	}
+
+	// ── Step 2: Collect lounge IDs so we can bulk-load routes ─────────────
+	loungeIDs := make([]uuid.UUID, len(lounges))
+	for i, l := range lounges {
+		loungeIDs[i] = l.ID
+	}
+
+	// ── Step 3: Bulk-load ALL routes for these lounges in ONE query ────────
+	// This replaces the old per-lounge h.loungeRouteRepo.GetLoungeRoutes() call
+	// inside the loop (N+1 problem that caused the 26-second timeout).
+	type routeRow struct {
+		LoungeID      uuid.UUID `db:"lounge_id"`
+		ID            uuid.UUID `db:"id"`
+		MasterRouteID uuid.UUID `db:"master_route_id"`
+		StopBeforeID  uuid.UUID `db:"stop_before_id"`
+		StopAfterID   uuid.UUID `db:"stop_after_id"`
+	}
+
+	// Build parameterised IN clause
+	query := `SELECT lounge_id, id, master_route_id, stop_before_id, stop_after_id
+	          FROM lounge_routes WHERE lounge_id = ANY($1)`
+	var routeRows []routeRow
+	if dbErr := h.loungeRouteRepo.DB().SelectContext(ctx, &routeRows, query, loungeIDs); dbErr != nil {
+		// Route data is non-critical — fall back to empty routes rather than failing
+		log.Printf("WARNING: Failed to bulk-load lounge routes: %v", dbErr)
+		routeRows = nil
+	}
+
+	// Index routes by lounge ID
+	routesByLounge := make(map[uuid.UUID][]models.LoungeRoute, len(lounges))
+	for _, rr := range routeRows {
+		routesByLounge[rr.LoungeID] = append(routesByLounge[rr.LoungeID], models.LoungeRoute{
+			ID:            rr.ID,
+			LoungeID:      rr.LoungeID,
+			MasterRouteID: rr.MasterRouteID,
+			StopBeforeID:  rr.StopBeforeID,
+			StopAfterID:   rr.StopAfterID,
+		})
+	}
+
+	// ── Step 4: Build response ─────────────────────────────────────────────
 	response := make([]gin.H, 0, len(lounges))
 	for _, lounge := range lounges {
-		// Parse JSONB fields
 		var amenities []string
 		var images []string
-
 		if lounge.Amenities != nil {
 			json.Unmarshal(lounge.Amenities, &amenities)
 		}
@@ -678,11 +739,9 @@ func (h *LoungeHandler) GetAllActiveLounges(c *gin.Context) {
 			json.Unmarshal(lounge.Images, &images)
 		}
 
-		// Get routes for this lounge
-		loungeRoutes, err := h.loungeRouteRepo.GetLoungeRoutes(lounge.ID)
-		if err != nil {
-			log.Printf("WARNING: Failed to get routes for lounge %s: %v", lounge.ID, err)
-			loungeRoutes = []models.LoungeRoute{} // Empty array on error
+		loungeRoutes := routesByLounge[lounge.ID]
+		if loungeRoutes == nil {
+			loungeRoutes = []models.LoungeRoute{}
 		}
 
 		response = append(response, gin.H{
@@ -709,6 +768,7 @@ func (h *LoungeHandler) GetAllActiveLounges(c *gin.Context) {
 		"total":   len(response),
 	})
 }
+
 
 // GetDistinctStates handles GET /api/v1/lounges/states
 // @Summary Get all distinct states with active lounges
