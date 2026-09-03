@@ -988,12 +988,20 @@ func (h *BookingOrchestratorHandler) PayHereWebhook(c *gin.Context) {
 	}
 	
 	// Assume it is a Booking intent (e.g. INT-....)
-	// We need the Intent UUID. The OrderID is likely the Intent reference we gave (e.g. INT-xxxx)
-	// We need to look up intent ID by its reference. The Orchestrator requires full Intent ID.
-	// We lookup intent by PaymentRef (Invoice ID).
-	
-	intent, err := h.orchestratorService.GetIntentByPaymentUID(payload.OrderID)
+	// The OrderID from PayHere is the order_id we sent, which is the intentId (full UUID).
+	// Try to look up intent by payment_reference first, then by ID directly.
+	var intent *models.BookingIntent
+
+	// Try by payment_reference (e.g. "INT-d0411bcf")
+	intent, err := h.orchestratorService.GetIntentByPaymentReference(payload.OrderID)
 	if err != nil || intent == nil {
+		// Try parsing as a UUID and looking up by ID directly
+		if intentUUID, parseErr := uuid.Parse(payload.OrderID); parseErr == nil {
+			intent, _ = h.orchestratorService.GetIntentByID(intentUUID)
+		}
+	}
+
+	if intent == nil {
 		h.logger.WithField("order_id", payload.OrderID).Warn("Intent not found for PayHere webhook")
 		c.JSON(http.StatusOK, gin.H{"message": "Intent not found, maybe already processed"})
 		return

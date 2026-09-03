@@ -1455,6 +1455,16 @@ func (s *BookingOrchestratorService) GetIntentByPaymentUID(uid string) (*models.
 	return s.intentRepo.GetIntentByPaymentUID(uid)
 }
 
+// GetIntentByPaymentReference retrieves an intent by its payment reference (e.g. "INT-d0411bcf")
+func (s *BookingOrchestratorService) GetIntentByPaymentReference(ref string) (*models.BookingIntent, error) {
+	return s.intentRepo.GetIntentByPaymentReference(ref)
+}
+
+// GetIntentByID retrieves an intent by its UUID
+func (s *BookingOrchestratorService) GetIntentByID(intentID uuid.UUID) (*models.BookingIntent, error) {
+	return s.intentRepo.GetIntentByID(intentID)
+}
+
 // ============================================================================
 // ADD LOUNGE TO EXISTING INTENT
 // ============================================================================
