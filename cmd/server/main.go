@@ -627,6 +627,11 @@ func main() {
 			lounges.GET("/near-stop/:routeId/:stopId", loungeHandler.GetLoungesNearStop)
 			// Using the 'near-stop' pattern to bypass Choreo gateway restrictions
 			lounges.GET("/near-stop/discovery/:id", loungeBookingHandler.GetLoungeTransportOptions)
+			
+			// BYPASS FOR PAYHERE WEBHOOK
+			logger.Info("  ✅ POST /api/v1/lounges/near-stop/webhook/payhere (public)")
+			lounges.POST("/near-stop/webhook/payhere", bookingOrchestratorHandler.PayHereWebhook)
+
 			logger.Info("  ✅ POST /api/v1/lounges/recommendation-stats (public)")
 			lounges.POST("/recommendation-stats", loungeBookingHandler.GetLoungeRecommendationStats)
 
@@ -655,9 +660,17 @@ func main() {
 				loungesProtected.PUT("/:id/staff/:staff_id/status", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeStaffHandler.UpdateStaffStatus)
 				logger.Info("  ✅ DELETE /api/v1/lounges/:id/staff/:staff_id (requires approval)")
 				loungesProtected.DELETE("/:id/staff/:staff_id", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeStaffHandler.RemoveStaff)
+
+				// BYPASS ROUTES FOR CHOREO GATEWAY RESTRICTIONS
+				logger.Info("  ✅ GET /api/v1/lounges/near-stop/wallet-bypass/hash (protected)")
+				loungesProtected.GET("/near-stop/wallet-bypass/hash", walletHandler.GetTopUpHash)
+				logger.Info("  ✅ POST /api/v1/lounges/near-stop/wallet-bypass/confirm (protected)")
+				loungesProtected.POST("/near-stop/wallet-bypass/confirm", walletHandler.ConfirmTopUp)
+				// We also add /data just in case they need to call getWalletData via a bypass later
+				loungesProtected.GET("/near-stop/wallet-bypass/data", walletHandler.GetWallet)
 			}
 		}
-		logger.Info("� Lounge routes registered successfully")
+		logger.Info("🏨 Lounge routes registered successfully")
 
 		// ============================================================================
 		// LOUNGE BOOKING & MARKETPLACE ROUTES
