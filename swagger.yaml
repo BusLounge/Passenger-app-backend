@@ -9311,24 +9311,6 @@ paths:
           description: Unauthorized
         '500':
           description: Internal Server Error
-  /api/v1/lounges/near-stop/wallet-bypass/confirm:
-    post:
-      summary: Wallet top-up confirmation
-      operationId: walletBypassConfirm
-      tags:
-      - Wallet
-      responses:
-        '200':
-          description: Success
-  /api/v1/lounges/near-stop/webhook/payhere:
-    post:
-      summary: Payhere webhook
-      operationId: payhereWebhook
-      tags:
-      - Payment
-      responses:
-        '200':
-          description: Success
 components:
   securitySchemes:
     BearerAuth:
