@@ -2,7 +2,7 @@
 # Optimized for small image size and fast builds
 
 # Stage 1: Build the application
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Set build metadata
 LABEL stage=builder
