@@ -664,8 +664,9 @@ func main() {
 				// BYPASS ROUTES FOR CHOREO GATEWAY RESTRICTIONS
 				logger.Info("  ✅ GET /api/v1/lounges/near-stop/wallet-bypass/hash (protected)")
 				loungesProtected.GET("/near-stop/wallet-bypass/hash", walletHandler.GetTopUpHash)
-				logger.Info("  ✅ POST /api/v1/lounges/near-stop/wallet-bypass/confirm (protected)")
+				logger.Info("  ✅ POST & GET /api/v1/lounges/near-stop/wallet-bypass/confirm (protected)")
 				loungesProtected.POST("/near-stop/wallet-bypass/confirm", walletHandler.ConfirmTopUp)
+				loungesProtected.GET("/near-stop/wallet-bypass/confirm", walletHandler.ConfirmTopUp)
 				// We also add /data just in case they need to call getWalletData via a bypass later
 				loungesProtected.GET("/near-stop/wallet-bypass/data", walletHandler.GetWallet)
 			}

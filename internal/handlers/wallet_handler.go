@@ -57,8 +57,21 @@ func (h *WalletHandler) ConfirmTopUp(c *gin.Context) {
 
 	var req TopUpConfirmRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format: " + err.Error()})
-		return
+		// Fallback to query params for GET request bypass via Choreo gateway
+		amountStr := c.Query("amount")
+		gatewayRef := c.Query("gateway_reference")
+		if amountStr != "" && gatewayRef != "" {
+			var amount float64
+			if _, scanErr := fmt.Sscanf(amountStr, "%f", &amount); scanErr == nil && amount > 0 {
+				req.Amount = amount
+				req.GatewayReference = gatewayRef
+				err = nil
+			}
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format: " + err.Error()})
+			return
+		}
 	}
 
 	if req.Amount <= 0 {
