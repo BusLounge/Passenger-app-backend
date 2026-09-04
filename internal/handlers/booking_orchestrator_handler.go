@@ -199,7 +199,7 @@ func (h *BookingOrchestratorHandler) ConfirmBooking(c *gin.Context) {
 	}
 
 	// Confirm booking
-	response, err := h.orchestratorService.ConfirmBooking(intentID, userID, req.PaymentReference)
+	response, err := h.orchestratorService.ConfirmBooking(intentID, userID, req.PaymentReference, req.PaymentGateway)
 	if err != nil {
 		if err.Error() == "intent not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -733,10 +733,12 @@ func (h *BookingOrchestratorHandler) PaymentWebhook(c *gin.Context) {
 		"correlation_id": correlationID,
 	}).Info("Confirming booking from webhook - amount verified")
 
+	gateway := "payable"
 	bookingResult, err := h.orchestratorService.ConfirmBooking(
 		intent.ID,
 		intent.UserID,
 		&statusResp.TransactionID,
+		&gateway,
 	)
 
 	if err != nil {
@@ -1015,7 +1017,8 @@ func (h *BookingOrchestratorHandler) PayHereWebhook(c *gin.Context) {
 	}
 
 	// Confirm the booking!
-	_, err = h.orchestratorService.ConfirmBooking(intent.ID, intent.UserID, &payload.PaymentID)
+	gateway := "payhere"
+	_, err = h.orchestratorService.ConfirmBooking(intent.ID, intent.UserID, &payload.PaymentID, &gateway)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to confirm booking from PayHere Webhook")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Booking confirmation failed"})

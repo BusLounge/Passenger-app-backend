@@ -616,6 +616,7 @@ type InitiatePaymentResponse struct {
 type ConfirmBookingRequest struct {
 	IntentID         string  `json:"intent_id" binding:"required"`
 	PaymentReference *string `json:"payment_reference,omitempty"` // Optional if webhook already set it
+	PaymentGateway   *string `json:"payment_gateway,omitempty"`   // Specifies how the user paid (e.g. "internal_wallet")
 }
 
 // ConfirmBookingResponse is returned after successful confirmation

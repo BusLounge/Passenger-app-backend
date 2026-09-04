@@ -709,6 +709,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 	intentID uuid.UUID,
 	userID uuid.UUID,
 	paymentReference *string,
+	paymentGateway *string,
 ) (*models.ConfirmBookingResponse, error) {
 	// 1. Get intent
 	intent, err := s.intentRepo.GetIntentByID(intentID)
@@ -762,11 +763,34 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 		return nil, fmt.Errorf("intent cannot be confirmed (status: %s)", intent.Status)
 	}
 
-	// 5. Verify payment (in production, would check with gateway)
-	// For now, we trust the payment reference
-	if paymentReference != nil && *paymentReference != "" {
+	// 5. Handle internal wallet payment
+	if paymentGateway != nil && *paymentGateway == "internal_wallet" {
+		if s.walletService == nil {
+			return nil, fmt.Errorf("wallet service not configured")
+		}
+		// Deduct balance
+		err := s.walletService.DeductBalance(
+			userID, 
+			intent.TotalAmount, 
+			intent.ID.String(), 
+			fmt.Sprintf("Booking Payment: %s", intent.ID.String()[:8]),
+		)
+		if err != nil {
+			s.logger.WithError(err).Warn("Failed to deduct wallet balance during confirm")
+			return nil, fmt.Errorf("wallet payment failed: %w", err)
+		}
+		
+		// Map payment status for internal wallet
 		if err := s.intentRepo.UpdateIntentPaymentSuccess(intent.ID); err != nil {
-			s.logger.WithError(err).Warn("Failed to update payment status")
+			s.logger.WithError(err).Warn("Failed to update payment status after wallet deduction")
+		}
+	} else {
+		// 5b. Verify payment for external gateways
+		// For now, we trust the payment reference
+		if paymentReference != nil && *paymentReference != "" {
+			if err := s.intentRepo.UpdateIntentPaymentSuccess(intent.ID); err != nil {
+				s.logger.WithError(err).Warn("Failed to update payment status")
+			}
 		}
 	}
 
