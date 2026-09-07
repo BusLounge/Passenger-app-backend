@@ -988,14 +988,19 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 	// 11. Refresh intent to get booking IDs
 	intent, _ = s.intentRepo.GetIntentByID(intentID)
 
-	// 12. Award loyalty points based on total amount (1 point per 100 LKR spent)
+	// 12. Award loyalty points based on total amount (1 point per 100 LKR spent, min 1 point)
 	pointsToAward := int(intent.TotalAmount / 100)
-	if pointsToAward > 0 {
-		if err := s.passengerRepo.AddLoyaltyPoints(userID, pointsToAward, masterRef); err != nil {
-			s.logger.WithError(err).Error("Failed to award loyalty points")
-		} else {
-			s.logger.WithField("points", pointsToAward).Info("Loyalty points awarded successfully")
-		}
+	if pointsToAward < 1 {
+		pointsToAward = 1
+	}
+	if err := s.passengerRepo.AddLoyaltyPoints(userID, pointsToAward, masterRef); err != nil {
+		s.logger.WithError(err).Error("Failed to award loyalty points")
+	} else {
+		s.logger.WithFields(logrus.Fields{
+			"points":    pointsToAward,
+			"user_id":   userID,
+			"reference": masterRef,
+		}).Info("Loyalty points awarded successfully")
 	}
 
 	s.logger.WithFields(logrus.Fields{
