@@ -156,3 +156,37 @@ func (s *MagiyaService) GetSchedules(queryString string) ([]byte, error) {
 
 	return bodyBytes, nil
 }
+
+// GetSeatLayout proxies the seat layout request to Magiya Merchant V2 get-seat-map endpoint
+func (s *MagiyaService) GetSeatLayout(queryString string) ([]byte, error) {
+	magiyaURL := "https://stage.magiya.lk/merchant/api/get-seat-map"
+	if queryString != "" {
+		magiyaURL = magiyaURL + "?" + queryString
+	}
+
+	s.logger.WithField("url", magiyaURL).Info("Proxying request to Magiya /get-seat-map API...")
+	resp, err := http.Get(magiyaURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Magiya API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Magiya API response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		s.logger.WithFields(logrus.Fields{
+			"status": resp.StatusCode,
+			"body":   string(bodyBytes),
+		}).Error("Magiya API returned error status")
+		return bodyBytes, fmt.Errorf("magiya API returned status %d", resp.StatusCode)
+	}
+
+	if !json.Valid(bodyBytes) {
+		return nil, fmt.Errorf("magiya API returned raw invalid JSON")
+	}
+
+	return bodyBytes, nil
+}

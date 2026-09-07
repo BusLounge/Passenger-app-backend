@@ -69,3 +69,27 @@ func (h *MagiyaHandler) GetSchedules(c *gin.Context) {
 
 	c.Data(http.StatusOK, "application/json; charset=utf-8", schedulesJSON)
 }
+
+// GetSeatLayout
+// @Summary Get Magiya seat layout
+// @Description Secure proxy for Magiya get-seat-map API
+// @Tags Magiya
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/v1/magiya/seat-map [get]
+func (h *MagiyaHandler) GetSeatLayout(c *gin.Context) {
+	rawQuery := c.Request.URL.RawQuery
+	
+	seatMapJSON, err := h.service.GetSeatLayout(rawQuery)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to fetch Magiya seat-map proxy")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to load seat layout",
+		})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json; charset=utf-8", seatMapJSON)
+}
