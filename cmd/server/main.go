@@ -300,6 +300,12 @@ func main() {
 	searchHandler := handlers.NewSearchHandler(searchService, logger)
 	logger.Info("✓ Search system initialized")
 
+	// Initialize Magiya system
+	logger.Info("Initializing Magiya system...")
+	magiyaService := services.NewMagiyaService(logger)
+	magiyaHandler := handlers.NewMagiyaHandler(magiyaService, logger)
+	logger.Info("✓ Magiya system initialized")
+
 	// Initialize Trip Seat Handler (tripSeatRepo already initialized above)
 	tripSeatHandler := handlers.NewTripSeatHandler(
 		tripSeatRepo,
@@ -1044,6 +1050,15 @@ func main() {
 			search.GET("/health", searchHandler.HealthCheck)
 		}
 		logger.Info("🔍 Search routes registered successfully")
+
+		// Magiya routes
+		logger.Info("🚇 Registering Magiya routes...")
+		magiya := v1.Group("/magiya")
+		{
+			logger.Info("  ✅ GET /api/v1/magiya/stations")
+			magiya.GET("/stations", magiyaHandler.GetStations)
+		}
+		logger.Info("🚇 Magiya routes registered successfully")
 
 		// System Settings routes (protected)
 		systemSettings := v1.Group("/system-settings")
