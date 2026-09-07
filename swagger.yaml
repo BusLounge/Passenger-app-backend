@@ -9333,6 +9333,45 @@ paths:
       responses:
         '200':
           description: Successfully retrieved Magiya schedules
+  /api/v1/magiya/seat-map:
+    get:
+      summary: Get Magiya seat layout
+      description: Returns the real-time seat layout for a Magiya bus schedule. Proxies the Magiya Merchant API get-seat-map endpoint. Pass schedule_id, from_id, to_id, and date as query parameters.
+      operationId: getMagiyaSeatMap
+      tags:
+      - Search
+      security: []
+      parameters:
+      - name: schedule_id
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: The Magiya schedule ID
+      - name: from_id
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: The pickup counter/station ID
+      - name: to_id
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: The drop-off counter/station ID
+      - name: date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+        description: Journey date in YYYY-MM-DD format
+      responses:
+        '200':
+          description: Successfully retrieved Magiya seat layout
+        '500':
+          description: Internal Server Error
 components:
   securitySchemes:
     BearerAuth:
