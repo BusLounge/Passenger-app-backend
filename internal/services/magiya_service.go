@@ -181,6 +181,9 @@ func (s *MagiyaService) GetSeatLayout(queryString string) ([]byte, error) {
 			"status": resp.StatusCode,
 			"body":   string(bodyBytes),
 		}).Error("Magiya API returned error status")
+		if json.Valid(bodyBytes) {
+			return bodyBytes, nil
+		}
 		return bodyBytes, fmt.Errorf("magiya API returned status %d", resp.StatusCode)
 	}
 
