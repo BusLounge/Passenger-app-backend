@@ -311,6 +311,7 @@ func (r *PassengerRepository) AddLoyaltyPoints(userID uuid.UUID, points int, boo
 			points INT NOT NULL,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
+		ALTER TABLE passenger_loyalty_ledger ALTER COLUMN booking_id TYPE VARCHAR(255) USING booking_id::text;
 		GRANT ALL ON TABLE passenger_loyalty_ledger TO anon, authenticated, service_role, postgres;
 	`)
 
