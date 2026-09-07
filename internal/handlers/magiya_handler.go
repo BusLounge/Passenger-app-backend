@@ -45,3 +45,27 @@ func (h *MagiyaHandler) GetStations(c *gin.Context) {
 	// we just write it exactly to the response without decoding/encoding.
 	c.Data(http.StatusOK, "application/json; charset=utf-8", stationsJSON)
 }
+
+// GetSchedules handles GET /api/v1/magiya/schedules
+// @Summary Get Magiya schedules
+// @Description Secure proxy for Magiya get-schedules API
+// @Tags Magiya
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/v1/magiya/schedules [get]
+func (h *MagiyaHandler) GetSchedules(c *gin.Context) {
+	rawQuery := c.Request.URL.RawQuery
+	
+	schedulesJSON, err := h.service.GetSchedules(rawQuery)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to fetch Magiya schedules proxy")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to load schedules data",
+		})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json; charset=utf-8", schedulesJSON)
+}

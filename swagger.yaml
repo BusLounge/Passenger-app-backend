@@ -9322,6 +9322,17 @@ paths:
       responses:
         '200':
           description: Successfully retrieved Magiya stations
+  /api/v1/magiya/schedules:
+    get:
+      summary: Get Magiya schedules
+      description: Returns schedules fetched directly from the Magiya API with a 2-minute memory cache to prevent spamming. Supports all Magiya query parameters natively (e.g. `?date=2024-01-01&from=1&to=29`).
+      operationId: getMagiyaSchedules
+      tags:
+      - Search
+      security: []
+      responses:
+        '200':
+          description: Successfully retrieved Magiya schedules
 components:
   securitySchemes:
     BearerAuth:

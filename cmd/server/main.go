@@ -1057,6 +1057,9 @@ func main() {
 		{
 			logger.Info("  ✅ GET /api/v1/magiya/stations")
 			magiya.GET("/stations", magiyaHandler.GetStations)
+
+			logger.Info("  ✅ GET /api/v1/magiya/schedules")
+			magiya.GET("/schedules", magiyaHandler.GetSchedules)
 		}
 		logger.Info("🚇 Magiya routes registered successfully")
 
