@@ -9311,6 +9311,17 @@ paths:
           description: Unauthorized
         '500':
           description: Internal Server Error
+  /api/v1/magiya/stations:
+    get:
+      summary: Get all Magiya stations
+      description: Returns a cached list of all Magiya stations directly from the Magiya Merchant API.
+      operationId: getMagiyaStations
+      tags:
+      - Search
+      security: []
+      responses:
+        '200':
+          description: Successfully retrieved Magiya stations
 components:
   securitySchemes:
     BearerAuth:
