@@ -155,19 +155,17 @@ func (s *BookingOrchestratorService) CreateIntent(
 		if err != nil {
 			return nil, err
 		}
-		
-		if req.ReturnPreTripLounge != nil {
-			returnPreLoungePayload, returnFare, err := s.processLoungeIntent(req.ReturnPreTripLounge, intent.ID, expiresAt, "return_pre_trip")
-			if err != nil {
-				return nil, err
-			}
-			loungePayload.ReturnLounge = returnPreLoungePayload
-			returnPreLoungeFare = returnFare
-			loungeFare += returnFare
-		}
-		
 		intent.PreTripLoungeIntent = loungePayload
 		intent.PreLoungeFare = loungeFare
+	}
+
+	if req.ReturnPreTripLounge != nil {
+		returnPreLoungePayload, returnFare, err := s.processLoungeIntent(req.ReturnPreTripLounge, intent.ID, expiresAt, "return_pre_trip")
+		if err != nil {
+			return nil, err
+		}
+		intent.ReturnPreTripLoungeIntent = returnPreLoungePayload
+		returnPreLoungeFare = returnFare
 	}
 
 	// 6. Process transit lounge intent (if present)
@@ -186,23 +184,21 @@ func (s *BookingOrchestratorService) CreateIntent(
 		if err != nil {
 			return nil, err
 		}
-
-		if req.ReturnPostTripLounge != nil {
-			returnPostLoungePayload, returnFare, err := s.processLoungeIntent(req.ReturnPostTripLounge, intent.ID, expiresAt, "return_post_trip")
-			if err != nil {
-				return nil, err
-			}
-			loungePayload.ReturnLounge = returnPostLoungePayload
-			returnPostLoungeFare = returnFare
-			loungeFare += returnFare
-		}
-
 		intent.PostTripLoungeIntent = loungePayload
 		intent.PostLoungeFare = loungeFare
 	}
 
-	// 7. Calculate totals
-	intent.TotalAmount = intent.BusFare + intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare
+	if req.ReturnPostTripLounge != nil {
+		returnPostLoungePayload, returnFare, err := s.processLoungeIntent(req.ReturnPostTripLounge, intent.ID, expiresAt, "return_post_trip")
+		if err != nil {
+			return nil, err
+		}
+		intent.ReturnPostTripLoungeIntent = returnPostLoungePayload
+		returnPostLoungeFare = returnFare
+	}
+
+	// 8. Calculate totals
+	intent.TotalAmount = intent.BusFare + intent.PreLoungeFare + intent.TransitLoungeFare + intent.PostLoungeFare + returnPreLoungeFare + returnPostLoungeFare
 	intent.PricingSnapshot = models.PricingSnapshot{
 		BusFare:              intent.BusFare,
 		ReturnBusFare:        returnBusFare,
@@ -261,13 +257,13 @@ func (s *BookingOrchestratorService) CreateIntent(
 			s.intentRepo.UpdateIntentExpired(intent.ID)
 			return nil, err
 		}
-		if req.ReturnPreTripLounge != nil {
-			err := s.createLoungeHold(intent.ID, req.ReturnPreTripLounge, expiresAt, "return_pre_trip")
-			if err != nil {
-				s.rollbackHolds(intent.ID)
-				s.intentRepo.UpdateIntentExpired(intent.ID)
-				return nil, err
-			}
+	}
+	if req.ReturnPreTripLounge != nil {
+		err := s.createLoungeHold(intent.ID, req.ReturnPreTripLounge, expiresAt, "return_pre_trip")
+		if err != nil {
+			s.rollbackHolds(intent.ID)
+			s.intentRepo.UpdateIntentExpired(intent.ID)
+			return nil, err
 		}
 	}
 	if req.TransitLounge != nil {
@@ -285,13 +281,13 @@ func (s *BookingOrchestratorService) CreateIntent(
 			s.intentRepo.UpdateIntentExpired(intent.ID)
 			return nil, err
 		}
-		if req.ReturnPostTripLounge != nil {
-			err := s.createLoungeHold(intent.ID, req.ReturnPostTripLounge, expiresAt, "return_post_trip")
-			if err != nil {
-				s.rollbackHolds(intent.ID)
-				s.intentRepo.UpdateIntentExpired(intent.ID)
-				return nil, err
-			}
+	}
+	if req.ReturnPostTripLounge != nil {
+		err := s.createLoungeHold(intent.ID, req.ReturnPostTripLounge, expiresAt, "return_post_trip")
+		if err != nil {
+			s.rollbackHolds(intent.ID)
+			s.intentRepo.UpdateIntentExpired(intent.ID)
+			return nil, err
 		}
 	}
 
@@ -1513,6 +1509,8 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	preTripLounge *models.LoungeIntentPayload,
 	transitLounge *models.LoungeIntentPayload,
 	postTripLounge *models.LoungeIntentPayload,
+	returnPreTripLounge *models.LoungeIntentPayload,
+	returnPostTripLounge *models.LoungeIntentPayload,
 ) (*models.BookingIntentResponse, error) {
 	// 1. Get and validate intent
 	intent, err := s.intentRepo.GetIntentByID(intentID)
@@ -1576,7 +1574,7 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	}
 
 	// 2. Calculate additional lounge fares
-	var preLoungeFare, transitLoungeFare, postLoungeFare float64
+	var preLoungeFare, transitLoungeFare, postLoungeFare, returnPreLoungeFare, returnPostLoungeFare float64
 
 	if preTripLounge != nil {
 		loungeID, _ := uuid.Parse(preTripLounge.LoungeID)
@@ -1707,18 +1705,118 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 		}
 	}
 
+	if returnPreTripLounge != nil {
+		loungeID, _ := uuid.Parse(returnPreTripLounge.LoungeID)
+
+		// Validate lounge status
+		lounge, err := s.loungeRepo.GetLoungeByID(loungeID)
+		if err != nil || lounge == nil {
+			return nil, fmt.Errorf("return pre-trip lounge not found")
+		}
+		if lounge.Status != "approved" {
+			return nil, fmt.Errorf("return pre-trip lounge is not available (status: %s)", lounge.Status)
+		}
+		if !lounge.IsOperational {
+			return nil, fmt.Errorf("return pre-trip lounge is temporarily closed")
+		}
+
+		returnPreLoungeFare = returnPreTripLounge.TotalPrice
+		expiresAt := time.Now().Add(s.config.IntentTTL)
+
+		loungeDate := parseLoungeDate(returnPreTripLounge.Date)
+		checkInTime := returnPreTripLounge.CheckInTime
+		if checkInTime == "" {
+			checkInTime = "09:00"
+		}
+		checkOutTime := calculateCheckoutTime(checkInTime, returnPreTripLounge.PricingType)
+
+		hold := &models.LoungeCapacityHold{
+			ID:            uuid.New(),
+			LoungeID:      loungeID,
+			IntentID:      intent.ID,
+			Date:          loungeDate,
+			TimeSlotStart: checkInTime,
+			TimeSlotEnd:   checkOutTime,
+			GuestsCount:   returnPreTripLounge.GuestCount,
+			HeldUntil:     expiresAt,
+			Status:        "held",
+			CreatedAt:     time.Now(),
+		}
+		if err := s.intentRepo.CreateLoungeCapacityHold(hold); err != nil {
+			s.logger.WithError(err).Warn("Failed to create return pre-trip lounge hold")
+		}
+	}
+
+	if returnPostTripLounge != nil {
+		loungeID, _ := uuid.Parse(returnPostTripLounge.LoungeID)
+
+		// Validate lounge status
+		lounge, err := s.loungeRepo.GetLoungeByID(loungeID)
+		if err != nil || lounge == nil {
+			return nil, fmt.Errorf("return post-trip lounge not found")
+		}
+		if lounge.Status != "approved" {
+			return nil, fmt.Errorf("return post-trip lounge is not available (status: %s)", lounge.Status)
+		}
+		if !lounge.IsOperational {
+			return nil, fmt.Errorf("return post-trip lounge is temporarily closed")
+		}
+
+		returnPostLoungeFare = returnPostTripLounge.TotalPrice
+		expiresAt := time.Now().Add(s.config.IntentTTL)
+
+		loungeDate := parseLoungeDate(returnPostTripLounge.Date)
+		checkInTime := returnPostTripLounge.CheckInTime
+		if checkInTime == "" {
+			checkInTime = "09:00"
+		}
+		checkOutTime := calculateCheckoutTime(checkInTime, returnPostTripLounge.PricingType)
+
+		hold := &models.LoungeCapacityHold{
+			ID:            uuid.New(),
+			LoungeID:      loungeID,
+			IntentID:      intent.ID,
+			Date:          loungeDate,
+			TimeSlotStart: checkInTime,
+			TimeSlotEnd:   checkOutTime,
+			GuestsCount:   returnPostTripLounge.GuestCount,
+			HeldUntil:     expiresAt,
+			Status:        "held",
+			CreatedAt:     time.Now(),
+		}
+		if err := s.intentRepo.CreateLoungeCapacityHold(hold); err != nil {
+			s.logger.WithError(err).Warn("Failed to create return post-trip lounge hold")
+		}
+	}
+
+	// Calculate missing fares from previous state to not override them with 0
+	if preLoungeFare == 0 { preLoungeFare = intent.PreLoungeFare }
+	if transitLoungeFare == 0 { transitLoungeFare = intent.TransitLoungeFare }
+	if postLoungeFare == 0 { postLoungeFare = intent.PostLoungeFare }
+	if returnPreLoungeFare == 0 { returnPreLoungeFare = intent.PricingSnapshot.ReturnPreLoungeFare }
+	if returnPostLoungeFare == 0 { returnPostLoungeFare = intent.PricingSnapshot.ReturnPostLoungeFare }
+
 	// 3. Update intent with lounge data
-	newTotal := intent.BusFare + preLoungeFare + transitLoungeFare + postLoungeFare
+	newTotal := intent.BusFare + intent.PricingSnapshot.ReturnBusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
 	newExpiresAt := time.Now().Add(s.config.IntentTTL) // Extend the hold timer
+
+	// Prepare updated pricing snapshot
+	updatedSnapshot := intent.PricingSnapshot
+	updatedSnapshot.PreLoungeFare = preLoungeFare
+	updatedSnapshot.TransitLoungeFare = transitLoungeFare
+	updatedSnapshot.PostLoungeFare = postLoungeFare
+	updatedSnapshot.ReturnPreLoungeFare = returnPreLoungeFare
+	updatedSnapshot.ReturnPostLoungeFare = returnPostLoungeFare
+	updatedSnapshot.Total = newTotal
+	updatedSnapshot.CalculatedAt = time.Now()
 
 	s.logger.WithFields(logrus.Fields{
 		"intent_id":           intent.ID,
 		"has_pre_lounge":      preTripLounge != nil,
 		"has_transit_lounge":  transitLounge != nil,
 		"has_post_lounge":     postTripLounge != nil,
-		"pre_lounge_fare":     preLoungeFare,
-		"transit_lounge_fare": transitLoungeFare,
-		"post_lounge_fare":    postLoungeFare,
+		"has_return_pre_lounge": returnPreTripLounge != nil,
+		"has_return_post_lounge": returnPostTripLounge != nil,
 		"new_total":           newTotal,
 	}).Info("AddLoungeToIntent: Saving lounge data to intent")
 
@@ -1727,10 +1825,16 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 		preTripLounge,
 		transitLounge,
 		postTripLounge,
+		returnPreTripLounge,
+		returnPostTripLounge,
+		preTripLounge != nil, transitLounge != nil, postTripLounge != nil, returnPreTripLounge != nil, returnPostTripLounge != nil,
 		preLoungeFare,
 		transitLoungeFare,
 		postLoungeFare,
+		returnPreLoungeFare,
+		returnPostLoungeFare,
 		newTotal,
+		updatedSnapshot,
 		newExpiresAt,
 	)
 	if err != nil {
@@ -1832,18 +1936,20 @@ func (s *BookingOrchestratorService) buildIntentResponse(intent *models.BookingI
 		IntentID: intent.ID,
 		Status:   string(intent.Status),
 		PriceBreakdown: models.PriceBreakdown{
-			BusFare:           intent.BusFare,
-			ReturnBusFare:     intent.PricingSnapshot.ReturnBusFare,
-			PreLoungeFare:     intent.PreLoungeFare,
-			TransitLoungeFare: intent.TransitLoungeFare,
-			PostLoungeFare:    intent.PostLoungeFare,
-			Total:             intent.TotalAmount,
-			Currency:          intent.Currency,
+			BusFare:              intent.BusFare,
+			ReturnBusFare:        intent.PricingSnapshot.ReturnBusFare,
+			PreLoungeFare:        intent.PreLoungeFare,
+			TransitLoungeFare:    intent.TransitLoungeFare,
+			PostLoungeFare:       intent.PostLoungeFare,
+			ReturnPreLoungeFare:  intent.PricingSnapshot.ReturnPreLoungeFare,
+			ReturnPostLoungeFare: intent.PricingSnapshot.ReturnPostLoungeFare,
+			Total:                intent.TotalAmount,
+			Currency:             intent.Currency,
 		},
 		ExpiresAt:                 intent.ExpiresAt,
 		TTLSeconds:                ttl,
 		SeatAvailabilityChecked:   intent.BusIntent != nil,
-		LoungeAvailabilityChecked: intent.PreTripLoungeIntent != nil || intent.TransitLoungeIntent != nil || intent.PostTripLoungeIntent != nil,
+		LoungeAvailabilityChecked: intent.PreTripLoungeIntent != nil || intent.TransitLoungeIntent != nil || intent.PostTripLoungeIntent != nil || intent.ReturnPreTripLoungeIntent != nil || intent.ReturnPostTripLoungeIntent != nil,
 	}
 }
 

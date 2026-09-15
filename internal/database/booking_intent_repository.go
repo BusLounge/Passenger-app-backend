@@ -430,17 +430,28 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 	preTripLounge *models.LoungeIntentPayload,
 	transitLounge *models.LoungeIntentPayload,
 	postTripLounge *models.LoungeIntentPayload,
+	returnPreTripLounge *models.LoungeIntentPayload,
+	returnPostTripLounge *models.LoungeIntentPayload,
+	hasPreTripLounge bool,
+	hasTransitLounge bool,
+	hasPostTripLounge bool,
+	hasReturnPreTripLounge bool,
+	hasReturnPostTripLounge bool,
 	preLoungeFare float64,
 	transitLoungeFare float64,
 	postLoungeFare float64,
+	returnPreLoungeFare float64,
+	returnPostLoungeFare float64,
 	newTotal float64,
+	updatedSnapshot models.PricingSnapshot,
 	newExpiresAt time.Time,
 ) error {
 	// Convert lounge payloads to JSON - use *string to properly handle JSONB
-	var preLoungeJSON, transitLoungeJSON, postLoungeJSON *string
+	var preLoungeJSON, transitLoungeJSON, postLoungeJSON, returnPreLoungeJSON, returnPostLoungeJSON *string
+	var pricingSnapshotJSON string
 	var err error
 
-	if preTripLounge != nil {
+	if hasPreTripLounge && preTripLounge != nil {
 		jsonBytes, err := json.Marshal(preTripLounge)
 		if err != nil {
 			return fmt.Errorf("failed to marshal pre-trip lounge: %w", err)
@@ -449,7 +460,7 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		preLoungeJSON = &s
 	}
 
-	if transitLounge != nil {
+	if hasTransitLounge && transitLounge != nil {
 		jsonBytes, err := json.Marshal(transitLounge)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transit lounge: %w", err)
@@ -458,7 +469,7 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		transitLoungeJSON = &s
 	}
 
-	if postTripLounge != nil {
+	if hasPostTripLounge && postTripLounge != nil {
 		jsonBytes, err := json.Marshal(postTripLounge)
 		if err != nil {
 			return fmt.Errorf("failed to marshal post-trip lounge: %w", err)
@@ -466,6 +477,30 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		s := string(jsonBytes)
 		postLoungeJSON = &s
 	}
+
+	if hasReturnPreTripLounge && returnPreTripLounge != nil {
+		jsonBytes, err := json.Marshal(returnPreTripLounge)
+		if err != nil {
+			return fmt.Errorf("failed to marshal return pre-trip lounge: %w", err)
+		}
+		s := string(jsonBytes)
+		returnPreLoungeJSON = &s
+	}
+
+	if hasReturnPostTripLounge && returnPostTripLounge != nil {
+		jsonBytes, err := json.Marshal(returnPostTripLounge)
+		if err != nil {
+			return fmt.Errorf("failed to marshal return post-trip lounge: %w", err)
+		}
+		s := string(jsonBytes)
+		returnPostLoungeJSON = &s
+	}
+	
+	jsonBytes, err := json.Marshal(updatedSnapshot)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pricing_snapshot: %w", err)
+	}
+	pricingSnapshotJSON = string(jsonBytes)
 
 	// Update intent type to 'combined' (bus + lounge)
 	// Must match DB constraint: chk_intent_type_matches_payload
@@ -477,11 +512,14 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		    pre_trip_lounge_intent = COALESCE($3, pre_trip_lounge_intent),
 		    transit_lounge_intent = COALESCE($4, transit_lounge_intent),
 		    post_trip_lounge_intent = COALESCE($5, post_trip_lounge_intent),
-		    pre_lounge_fare = CASE WHEN $6 > 0 THEN $6 ELSE pre_lounge_fare END,
-		    transit_lounge_fare = CASE WHEN $7 > 0 THEN $7 ELSE transit_lounge_fare END,
-		    post_lounge_fare = CASE WHEN $8 > 0 THEN $8 ELSE post_lounge_fare END,
-		    total_amount = $9,
-		    expires_at = $10,
+		    return_pre_trip_lounge_intent = COALESCE($6, return_pre_trip_lounge_intent),
+		    return_post_trip_lounge_intent = COALESCE($7, return_post_trip_lounge_intent),
+		    pre_lounge_fare = CASE WHEN $8 > 0 THEN $8 ELSE pre_lounge_fare END,
+		    transit_lounge_fare = CASE WHEN $9 > 0 THEN $9 ELSE transit_lounge_fare END,
+		    post_lounge_fare = CASE WHEN $10 > 0 THEN $10 ELSE post_lounge_fare END,
+		    total_amount = $11,
+		    pricing_snapshot = $12,
+		    expires_at = $13,
 		    updated_at = NOW()
 		WHERE id = $1 AND status = 'held'`
 
@@ -491,10 +529,13 @@ func (r *BookingIntentRepository) AddLoungeToIntent(
 		preLoungeJSON,
 		transitLoungeJSON,
 		postLoungeJSON,
+		returnPreLoungeJSON,
+		returnPostLoungeJSON,
 		preLoungeFare,
 		transitLoungeFare,
 		postLoungeFare,
 		newTotal,
+		pricingSnapshotJSON,
 		newExpiresAt,
 	)
 	if err != nil {
