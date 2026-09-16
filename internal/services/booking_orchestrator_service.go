@@ -1797,7 +1797,7 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	if returnPostLoungeFare == 0 { returnPostLoungeFare = intent.PricingSnapshot.ReturnPostLoungeFare }
 
 	// 3. Update intent with lounge data
-	newTotal := intent.BusFare + intent.PricingSnapshot.ReturnBusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
+	newTotal := intent.BusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
 	newExpiresAt := time.Now().Add(s.config.IntentTTL) // Extend the hold timer
 
 	// Prepare updated pricing snapshot
