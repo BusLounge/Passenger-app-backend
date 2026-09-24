@@ -112,12 +112,9 @@ type MasterBooking struct {
 	BookingReference string      `json:"booking_reference" db:"booking_reference"`
 	UserID           string      `json:"user_id" db:"user_id"`
 	BookingType      BookingType `json:"booking_type" db:"booking_type"`
+	BookingIntentID  string      `json:"booking_intent_id" db:"booking_intent_id"`
 
 	// Totals
-	BusTotal             float64 `json:"bus_total" db:"bus_total"`
-	LoungeTotal          float64 `json:"lounge_total" db:"lounge_total"`
-	LoungeTransportTotal float64 `json:"lounge_transport_total" db:"lounge_transport_total"`
-	PreOrderTotal        float64 `json:"pre_order_total" db:"pre_order_total"`
 	Subtotal             float64 `json:"subtotal" db:"subtotal"`
 	DiscountAmount       float64 `json:"discount_amount" db:"discount_amount"`
 	TaxAmount            float64 `json:"tax_amount" db:"tax_amount"`
@@ -154,14 +151,12 @@ type MasterBooking struct {
 	// Transport bookings
 	TransportBookings []TransportBooking `json:"transport_bookings,omitempty" db:"-"`
 
-	// Refund
-	RefundAmount    float64 `json:"refund_amount" db:"refund_amount"`
-	RefundReference *string `json:"refund_reference,omitempty" db:"refund_reference"`
-
 	// Metadata
 	BookingSource    BookingSource `json:"booking_source" db:"booking_source"`
 	SearchFromLounge *string       `json:"search_from_lounge,omitempty" db:"search_from_lounge"`
 	SearchToLounge   *string       `json:"search_to_lounge,omitempty" db:"search_to_lounge"`
+	QRCodeData       *string       `json:"qr_code_data,omitempty" db:"qr_code_data"`
+	QRGeneratedAt    *time.Time    `json:"qr_generated_at,omitempty" db:"qr_generated_at"`
 	DeviceInfo       DeviceInfo    `json:"device_info,omitempty" db:"device_info"`
 	Notes            *string       `json:"notes,omitempty" db:"notes"`
 
@@ -206,10 +201,6 @@ type BusBooking struct {
 	// Cancellation
 	CancelledAt        *time.Time `json:"cancelled_at,omitempty" db:"cancelled_at"`
 	CancellationReason *string    `json:"cancellation_reason,omitempty" db:"cancellation_reason"`
-
-	// QR Code
-	QRCodeData    *string    `json:"qr_code_data,omitempty" db:"qr_code_data"`
-	QRGeneratedAt *time.Time `json:"qr_generated_at,omitempty" db:"qr_generated_at"`
 
 	SpecialRequests *string `json:"special_requests,omitempty" db:"special_requests"`
 
@@ -381,7 +372,6 @@ type BookingListItem struct {
 	DepartureDatetime *time.Time        `json:"departure_datetime,omitempty" db:"departure_datetime"`
 	NumberOfSeats     *int              `json:"number_of_seats,omitempty" db:"number_of_seats"`
 	BusStatus         *BusBookingStatus `json:"bus_status,omitempty" db:"bus_status"`
-	QRCodeData        *string           `json:"qr_code_data,omitempty" db:"qr_code_data"`
 
 	// Search Data
 	SearchFromLounge *string `json:"search_from_lounge,omitempty" db:"search_from_lounge"`
@@ -410,12 +400,10 @@ func (b *MasterBooking) IsPaid() bool {
 // NeedsRefund checks if booking needs refund on cancellation
 func (b *MasterBooking) NeedsRefund() bool {
 	return b.BookingStatus == MasterBookingCancelled &&
-		b.PaymentStatus == MasterPaymentPaid &&
-		b.RefundAmount == 0
+		b.PaymentStatus == MasterPaymentPaid
 }
 
 // CalculateTotals recalculates booking totals
 func (b *MasterBooking) CalculateTotals() {
-	b.Subtotal = b.BusTotal + b.LoungeTotal + b.LoungeTransportTotal + b.PreOrderTotal
 	b.TotalAmount = b.Subtotal - b.DiscountAmount + b.TaxAmount
 }

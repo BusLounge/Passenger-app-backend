@@ -292,60 +292,30 @@ type BookingIntent struct {
 	IntentType BookingIntentType   `json:"intent_type" db:"intent_type"`
 	Status     BookingIntentStatus `json:"status" db:"status"`
 
-	// JSONB payloads (nullable in DB)
-	BusIntent            *BusIntentPayload    `json:"bus_intent,omitempty" db:"bus_intent"`
-	ReturnBusIntent      *BusIntentPayload    `json:"return_bus_intent,omitempty" db:"return_bus_intent"`
-	PreTripLoungeIntent  *LoungeIntentPayload `json:"pre_trip_lounge_intent,omitempty" db:"pre_trip_lounge_intent"`
-	TransitLoungeIntent  *LoungeIntentPayload `json:"transit_lounge_intent,omitempty" db:"transit_lounge_intent"`
-	PostTripLoungeIntent *LoungeIntentPayload `json:"post_trip_lounge_intent,omitempty" db:"post_trip_lounge_intent"`
-	ReturnPreTripLoungeIntent  *LoungeIntentPayload `json:"return_pre_trip_lounge_intent,omitempty" db:"return_pre_trip_lounge_intent"`
-	ReturnPostTripLoungeIntent *LoungeIntentPayload `json:"return_post_trip_lounge_intent,omitempty" db:"return_post_trip_lounge_intent"`
-	TransportIntents     TransportIntentPayloads `json:"transport_intents,omitempty" db:"transport_intents"`
+	// Financial Details
+	TotalAmount     float64         `json:"total_amount" db:"total_amount"`
+	Currency        string          `json:"currency" db:"currency"`
+	PricingSnapshot PricingSnapshot `json:"pricing_snapshot" db:"pricing_snapshot"`
 
-	// Pricing (server-calculated, stored at intent time)
-	BusFare           float64         `json:"bus_fare" db:"bus_fare"`
-	PreLoungeFare     float64         `json:"pre_lounge_fare" db:"pre_lounge_fare"`
-	TransitLoungeFare float64         `json:"transit_lounge_fare" db:"transit_lounge_fare"`
-	PostLoungeFare    float64         `json:"post_lounge_fare" db:"post_lounge_fare"`
-	ReturnPreLoungeFare float64     `json:"return_pre_lounge_fare,omitempty" db:"-"`
-	ReturnPostLoungeFare float64    `json:"return_post_lounge_fare,omitempty" db:"-"`
-	TotalAmount       float64         `json:"total_amount" db:"total_amount"`
-	Currency          string          `json:"currency" db:"currency"`
-	PricingSnapshot   PricingSnapshot `json:"pricing_snapshot" db:"pricing_snapshot"`
+	// Passenger Contact Details
+	PassengerName  *string `json:"passenger_name,omitempty" db:"passenger_name"`
+	PassengerPhone *string `json:"passenger_phone,omitempty" db:"passenger_phone"`
 
-	// Payment tracking
-	PaymentReference       *string              `json:"payment_reference,omitempty" db:"payment_reference"`
-	PaymentStatus          *IntentPaymentStatus `json:"payment_status,omitempty" db:"payment_status"`
-	PaymentGateway         string               `json:"payment_gateway" db:"payment_gateway"`
-	PaymentUID             *string              `json:"payment_uid,omitempty" db:"payment_uid"`                           // PAYable unique transaction ID
-	PaymentStatusIndicator *string              `json:"payment_status_indicator,omitempty" db:"payment_status_indicator"` // PAYable status check token
+	// Timestamps for the booking lifecycle
+	ExpiresAt   time.Time  `json:"expires_at" db:"expires_at"`
+	ConfirmedAt *time.Time `json:"confirmed_at,omitempty" db:"confirmed_at"`
+	ExpiredAt   *time.Time `json:"expired_at,omitempty" db:"expired_at"`
 
-	// Passenger info (extracted from bus_intent for convenience)
-	PassengerName  string `json:"passenger_name,omitempty" db:"passenger_name"`
-	PassengerPhone string `json:"passenger_phone,omitempty" db:"passenger_phone"`
-
-	// Result references (filled AFTER confirmation)
-	BusBookingID           *uuid.UUID `json:"bus_booking_id,omitempty" db:"bus_booking_id"`
-	ReturnBusBookingID     *uuid.UUID `json:"return_bus_booking_id,omitempty" db:"return_bus_booking_id"`
-	PreLoungeBookingID     *uuid.UUID `json:"pre_lounge_booking_id,omitempty" db:"pre_lounge_booking_id"`
-	TransitLoungeBookingID *uuid.UUID `json:"transit_lounge_booking_id,omitempty" db:"transit_lounge_booking_id"`
-	PostLoungeBookingID    *uuid.UUID `json:"post_lounge_booking_id,omitempty" db:"post_lounge_booking_id"`
-	ReturnPreLoungeBookingID  *uuid.UUID `json:"return_pre_lounge_booking_id,omitempty" db:"return_pre_lounge_booking_id"`
-	ReturnPostLoungeBookingID *uuid.UUID `json:"return_post_lounge_booking_id,omitempty" db:"return_post_lounge_booking_id"`
-	TransportBookingIDs    []uuid.UUID `json:"transport_booking_ids,omitempty" db:"-"`
-
-	// TTL Management
-	ExpiresAt time.Time `json:"expires_at" db:"expires_at"`
-
-	// Timestamps
-	PaymentInitiatedAt *time.Time `json:"payment_initiated_at,omitempty" db:"payment_initiated_at"`
-	ConfirmedAt        *time.Time `json:"confirmed_at,omitempty" db:"confirmed_at"`
-	ExpiredAt          *time.Time `json:"expired_at,omitempty" db:"expired_at"`
-	CreatedAt          time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at" db:"updated_at"`
-
-	// Idempotency
+	// Prevents accidental double bookings
 	IdempotencyKey *string `json:"idempotency_key,omitempty" db:"idempotency_key"`
+
+	// Record-keeping Timestamps
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	
+	// Pre-loaded relational records (Not saved into this DB row directly)
+	Legs            []BookingIntentLeg `json:"legs,omitempty" db:"-"`
+	PaymentAttempts []PaymentAttempt   `json:"payment_attempts,omitempty" db:"-"`
 }
 
 // IsExpired checks if the intent has passed its TTL
@@ -716,4 +686,119 @@ type Alternative struct {
 
 func (e *PartialAvailabilityError) Error() string {
 	return e.Message
+}
+
+// GetBusIntent retrieves the outbound bus intent payload from the legs
+func (i *BookingIntent) GetBusIntent() *BusIntentPayload {
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeBusOutbound {
+var payload BusIntentPayload
+if err := json.Unmarshal(leg.LegIntent, &payload); err == nil {
+// Inject return trip if present in a return leg for backwards compatibility
+returnPayload := i.GetReturnBusIntent()
+if returnPayload != nil {
+payload.ReturnTrip = returnPayload
+}
+return &payload
+}
+}
+}
+return nil
+}
+
+// GetReturnBusIntent retrieves the return bus intent payload
+func (i *BookingIntent) GetReturnBusIntent() *BusIntentPayload {
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeBusReturn {
+var payload BusIntentPayload
+if err := json.Unmarshal(leg.LegIntent, &payload); err == nil {
+return &payload
+}
+}
+}
+return nil
+}
+
+func (i *BookingIntent) GetPreTripLoungeIntent() *LoungeIntentPayload {
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeLoungePreOutbound {
+var payload LoungeIntentPayload
+if err := json.Unmarshal(leg.LegIntent, &payload); err == nil {
+                returnPayload := i.GetReturnPreTripLoungeIntent()
+                if returnPayload != nil {
+                    payload.ReturnLounge = returnPayload
+                }
+return &payload
+}
+}
+}
+return nil
+}
+
+func (i *BookingIntent) GetReturnPreTripLoungeIntent() *LoungeIntentPayload {
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeLoungePreReturn {
+var payload LoungeIntentPayload
+if err := json.Unmarshal(leg.LegIntent, &payload); err == nil {
+return &payload
+}
+}
+}
+return nil
+}
+
+func (i *BookingIntent) GetTransitLoungeIntent() *LoungeIntentPayload {
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeTransitLounge {
+var payload LoungeIntentPayload
+if err := json.Unmarshal(leg.LegIntent, &payload); err == nil {
+return &payload
+}
+}
+}
+return nil
+}
+
+func (i *BookingIntent) GetPostTripLoungeIntent() *LoungeIntentPayload {
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeLoungePostOutbound {
+var payload LoungeIntentPayload
+if err := json.Unmarshal(leg.LegIntent, &payload); err == nil {
+returnPayload := i.GetReturnPostTripLoungeIntent()
+                if returnPayload != nil {
+                    payload.ReturnLounge = returnPayload
+                }
+return &payload
+}
+}
+}
+return nil
+}
+
+func (i *BookingIntent) GetReturnPostTripLoungeIntent() *LoungeIntentPayload {
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeLoungePostReturn {
+var payload LoungeIntentPayload
+if err := json.Unmarshal(leg.LegIntent, &payload); err == nil {
+return &payload
+}
+}
+}
+return nil
+}
+
+// GetTransportIntents retrieves the transport intents
+func (i *BookingIntent) GetTransportIntents() []TransportIntentPayload {
+    var results []TransportIntentPayload
+for _, leg := range i.Legs {
+if leg.LegType == LegTypeTransport {
+            var payloads TransportIntentPayloads
+if err := json.Unmarshal(leg.LegIntent, &payloads); err == nil {
+                for _, p := range payloads {
+    results = append(results, p)
+                }
+}
+}
+}
+return results
 }
