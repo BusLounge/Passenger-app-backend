@@ -139,51 +139,49 @@ func (r *AppBookingRepository) CreateBooking(
 		deviceInfoJSON = string(jsonBytes)
 	}
 
+	// 3. Generate Master QR Code
+	qrCode, err := r.GenerateBusBookingQR() // Reusing existing func
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate QR code: %w", err)
+	}
+	now := time.Now()
+	booking.QRCodeData = &qrCode
+	booking.QRGeneratedAt = &now
+
 	bookingQuery := `
 		INSERT INTO bookings (
-			booking_reference, user_id, booking_type,
-			bus_total, lounge_total, lounge_transport_total, pre_order_total,
+			booking_reference, user_id, booking_intent_id, booking_type,
 			subtotal, discount_amount, tax_amount, total_amount,
 			promo_code, promo_discount_type, promo_discount_value,
 			payment_status, payment_method, booking_status,
 			passenger_name, passenger_phone, passenger_email,
 			booking_source, device_info, notes,
-			search_from_lounge, search_to_lounge
+			search_from_lounge, search_to_lounge, qr_code_data, qr_generated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
+			$21, $22, $23, $24
 		) RETURNING id, created_at, updated_at`
 
 	err = tx.QueryRowx(bookingQuery,
-		booking.BookingReference, booking.UserID, booking.BookingType,
-		booking.BusTotal, booking.LoungeTotal, booking.LoungeTransportTotal, booking.PreOrderTotal,
+		booking.BookingReference, booking.UserID, booking.BookingIntentID, booking.BookingType,
 		booking.Subtotal, booking.DiscountAmount, booking.TaxAmount, booking.TotalAmount,
 		booking.PromoCode, booking.PromoDiscountType, booking.PromoDiscountValue,
 		booking.PaymentStatus, booking.PaymentMethod, booking.BookingStatus,
 		booking.PassengerName, booking.PassengerPhone, booking.PassengerEmail,
 		booking.BookingSource, deviceInfoJSON, booking.Notes,
 		booking.SearchFromLounge, booking.SearchToLounge,
+		booking.QRCodeData, booking.QRGeneratedAt,
 	).Scan(&booking.ID, &booking.CreatedAt, &booking.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create booking: %w", err)
 	}
 
 	allCreatedSeats := make([]models.BusBookingSeat, 0)
-	var firstQRCode string
+	// We no longer track firstQRCode here since it's on MasterBooking.
 
 	for idx, busBooking := range busBookings {
 		seats := multipleSeats[idx]
-
-		qrCode, err := r.GenerateBusBookingQR()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate QR code: %w", err)
-		}
-		if idx == 0 {
-			firstQRCode = qrCode
-		}
-		busBooking.QRCodeData = &qrCode
-		now := time.Now()
-		busBooking.QRGeneratedAt = &now
 
 		busBooking.BookingID = booking.ID
 
@@ -196,16 +194,16 @@ func (r *AppBookingRepository) CreateBooking(
 				booking_id, scheduled_trip_id,
 				boarding_stop_id, alighting_stop_id,
 				number_of_seats, fare_per_seat, total_fare,
-				status, qr_code_data, qr_generated_at, special_requests
+				status, special_requests, is_return
 			) VALUES (
-				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 			) RETURNING id, created_at, updated_at`
 
 		err = tx.QueryRowx(busBookingQuery,
 			busBooking.BookingID, busBooking.ScheduledTripID,
 			nullableUUID(busBooking.BoardingStopID), nullableUUID(busBooking.AlightingStopID),
 			busBooking.NumberOfSeats, busBooking.FarePerSeat, busBooking.TotalFare,
-			busBooking.Status, busBooking.QRCodeData, busBooking.QRGeneratedAt, busBooking.SpecialRequests,
+			busBooking.Status, busBooking.SpecialRequests, busBooking.IsReturn,
 		).Scan(&busBooking.ID, &busBooking.CreatedAt, &busBooking.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create bus booking %d: %w", idx, err)
@@ -271,7 +269,7 @@ func (r *AppBookingRepository) CreateBooking(
 		BusBooking:  firstBusBooking,
 		BusBookings: busBookings,
 		Seats:       allCreatedSeats,
-		QRCode:      firstQRCode,
+		QRCode:      *booking.QRCodeData,
 	}, nil
 }
 
@@ -279,14 +277,13 @@ func (r *AppBookingRepository) CreateBooking(
 func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterBooking, error) {
 	booking := &models.MasterBooking{}
 	query := `
-		SELECT id, booking_reference, user_id, booking_type,
-		       bus_total, lounge_total, lounge_transport_total, pre_order_total,
+		SELECT id, booking_reference, user_id, booking_intent_id, booking_type,
 		       subtotal, discount_amount, tax_amount, total_amount,
 		       promo_code, promo_discount_type, promo_discount_value,
 		       payment_status, payment_method, payment_reference, payment_gateway, paid_at,
 		       booking_status, passenger_name, passenger_phone, passenger_email,
 		       confirmed_at, cancelled_at, cancellation_reason, cancelled_by_user_id,
-		       completed_at, refund_amount, refund_reference, refunded_at,
+		       completed_at, qr_code_data, qr_generated_at,
 		       booking_source, device_info, notes, search_from_lounge, search_to_lounge, created_at, updated_at
 		FROM bookings WHERE id = $1`
 
@@ -397,7 +394,7 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
-			bb.status as bus_status, bb.qr_code_data,
+			bb.status as bus_status, b.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -433,7 +430,7 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
 			) as departure_datetime, 
 			bb.number_of_seats,
-			bb.status as bus_status, bb.qr_code_data,
+			bb.status as bus_status, b.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
