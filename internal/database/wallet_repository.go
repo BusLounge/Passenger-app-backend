@@ -18,7 +18,8 @@ type WalletRepository interface {
 }
 
 type walletRepository struct {
-	db *sqlx.DB
+	db              *sqlx.DB
+	transactionRepo TransactionRepository
 }
 
 func NewWalletRepository(db *sqlx.DB) WalletRepository {
@@ -33,10 +34,12 @@ func NewWalletRepository(db *sqlx.DB) WalletRepository {
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
 
-		CREATE TABLE IF NOT EXISTS wallet_transactions_passenger (
+		CREATE TABLE IF NOT EXISTS wallet_transactions (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			wallet_id UUID NOT NULL REFERENCES wallets_passenger(id),
 			amount DECIMAL(12,2) NOT NULL,
+			balance_before DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+			balance_after DECIMAL(12,2) NOT NULL DEFAULT 0.00,
 			transaction_type VARCHAR(20) NOT NULL,
 			reference_type VARCHAR(50),
 			gateway_reference VARCHAR(255),
@@ -44,14 +47,17 @@ func NewWalletRepository(db *sqlx.DB) WalletRepository {
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
 
-		ALTER TABLE wallet_transactions_passenger ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'COMPLETED';
-		ALTER TABLE wallet_transactions_passenger ADD COLUMN IF NOT EXISTS reference_id UUID;
+		ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'completed';
+		ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS reference_id UUID;
 	`)
 	if err != nil {
 		fmt.Printf("Warning: failed to auto-initialize wallet tables: %v\n", err)
 	}
 
-	return &walletRepository{db: db}
+	return &walletRepository{
+		db:              db,
+		transactionRepo: NewTransactionRepository(db),
+	}
 }
 
 func (r *walletRepository) GetWalletByUserID(userID uuid.UUID) (*models.Wallet, error) {
@@ -93,9 +99,9 @@ func (r *walletRepository) GetWalletBalance(userID uuid.UUID) (float64, error) {
 func (r *walletRepository) GetWalletTransactions(walletID uuid.UUID) ([]models.WalletTransaction, error) {
 	var transactions []models.WalletTransaction
 	err := r.db.Select(&transactions, `
-		SELECT id, wallet_id, CAST(amount AS FLOAT) as amount, transaction_type, reference_type, 
+		SELECT id, wallet_id, CAST(amount AS FLOAT) as amount, CAST(balance_before AS FLOAT) as balance_before, CAST(balance_after AS FLOAT) as balance_after, transaction_type, reference_type, 
 		       reference_id, gateway_reference, description, status, created_at 
-		FROM wallet_transactions_passenger 
+		FROM wallet_transactions 
 		WHERE wallet_id = $1 
 		ORDER BY created_at DESC 
 		LIMIT 50
@@ -117,17 +123,20 @@ func (r *walletRepository) ConfirmTopUp(userID uuid.UUID, amount float64, gatewa
 
 	// Double entry check: avoid duplicate webhooks/callbacks
 	var exists int
-	err = tx.Get(&exists, "SELECT COUNT(*) FROM wallet_transactions_passenger WHERE gateway_reference = $1", gatewayRef)
+	err = tx.Get(&exists, "SELECT COUNT(*) FROM wallet_transactions WHERE gateway_reference = $1", gatewayRef)
 	if err == nil && exists > 0 {
 		return fmt.Errorf("transaction already confirmed")
 	}
 
+	balanceBefore := wallet.Balance
+	balanceAfter := wallet.Balance + amount
+
 	// Insert transaction
 	_, err = tx.Exec(`
-		INSERT INTO wallet_transactions_passenger 
-		(wallet_id, amount, transaction_type, reference_type, gateway_reference, description) 
-		VALUES ($1, $2, 'CREDIT', 'TOPUP', $3, 'Top up via PayHere')
-	`, wallet.ID, amount, gatewayRef)
+		INSERT INTO wallet_transactions 
+		(wallet_id, amount, balance_before, balance_after, transaction_type, reference_type, gateway_reference, description, status) 
+		VALUES ($1, $2, $3, $4, 'credit', 'topup', $5, 'Top up via PayHere', 'completed')
+	`, wallet.ID, amount, balanceBefore, balanceAfter, gatewayRef)
 	if err != nil {
 		return fmt.Errorf("failed to insert transaction: %w", err)
 	}
@@ -136,6 +145,23 @@ func (r *walletRepository) ConfirmTopUp(userID uuid.UUID, amount float64, gatewa
 	_, err = tx.Exec("UPDATE wallets_passenger SET balance = balance + $1 WHERE id = $2", amount, wallet.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update balance: %w", err)
+	}
+
+	// Insert global transaction
+	globalTx := &models.Transaction{
+		UserID:            userID,
+		ReferenceType:     "wallet_topup",
+		PaymentSource:     "payhere",
+		ProviderReference: &gatewayRef,
+		Subtotal:          amount,
+		TaxAmount:         0,
+		TotalAmount:       amount,
+		PriceBreakdown:    models.TransactionPriceBreakdown{"topup_amount": amount},
+		Status:            "success",
+	}
+	err = r.transactionRepo.CreateTransaction(tx, globalTx)
+	if err != nil {
+		return fmt.Errorf("failed to create global transaction: %w", err)
 	}
 
 	return tx.Commit()
@@ -166,12 +192,38 @@ func (r *walletRepository) DeductBalance(userID uuid.UUID, amount float64, refer
 		return err
 	}
 
+	balanceBefore := wallet.Balance
+	balanceAfter := wallet.Balance - amount
+
 	_, err = tx.Exec(`
-		INSERT INTO wallet_transactions_passenger (wallet_id, amount, transaction_type, reference_type, gateway_reference, description)
-		VALUES ($1, $2, 'DEBIT', 'BOOKING', $3, 'Digital Wallet Booking Deduction')
-	`, wallet.ID, amount, reference)
+		INSERT INTO wallet_transactions (wallet_id, amount, balance_before, balance_after, transaction_type, reference_type, gateway_reference, description, status)
+		VALUES ($1, $2, $3, $4, 'debit', 'booking', $5, 'Digital Wallet Booking Deduction', 'completed')
+	`, wallet.ID, amount, balanceBefore, balanceAfter, reference)
 	if err != nil {
 		return err
+	}
+
+	refUUID, _ := uuid.Parse(reference)
+	globalTx := &models.Transaction{
+		UserID:            userID,
+		ReferenceType:     "booking",
+		PaymentSource:     "wallet",
+		Subtotal:          amount,
+		TaxAmount:         0,
+		TotalAmount:       amount,
+		PriceBreakdown:    models.TransactionPriceBreakdown{"payment_amount": amount},
+		Status:            "success",
+	}
+	if refUUID != uuid.Nil {
+		globalTx.ReferenceID = &refUUID
+	} else {
+		// Just in case it's a string reference that doesn't parse to UUID, store it in provider_reference instead
+		globalTx.ProviderReference = &reference
+	}
+	
+	err = r.transactionRepo.CreateTransaction(tx, globalTx)
+	if err != nil {
+		return fmt.Errorf("failed to create global transaction: %w", err)
 	}
 
 	return tx.Commit()

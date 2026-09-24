@@ -345,6 +345,7 @@ func main() {
 	bookingIntentRepo := database.NewBookingIntentRepository(sqlxDB.DB)
 	transportBookingRepo := database.NewTransportBookingRepository(sqlxDB.DB)
 	bookingOrchestratorConfig := services.DefaultOrchestratorConfig()
+	transactionRepo := database.NewTransactionRepository(sqlxDB.DB)
 	// Initialize payment audit repository for logging all payment events
 	paymentAuditRepo := database.NewPaymentAuditRepository(sqlxDB.DB, logger)
 	logger.Info("✓ Payment audit repository initialized")
@@ -374,6 +375,7 @@ func main() {
 		busOwnerRouteRepo,
 		transportBookingRepo,
 		passengerRepository,
+		transactionRepo,
 		payableService,
 		walletService,
 		smsGateway,

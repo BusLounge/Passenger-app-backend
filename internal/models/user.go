@@ -68,6 +68,7 @@ func (nt *NullTime) UnmarshalJSON(data []byte) error {
 // User represents a user in the system
 type User struct {
 	ID               uuid.UUID    `json:"id" db:"id"`
+	WalletID         uuid.UUID      `json:"wallet_id" db:"wallet_id"`
 	Phone            string       `json:"phone" db:"phone"`
 	Email            NullString   `json:"email,omitempty" db:"email"`
 	FirstName        NullString   `json:"first_name,omitempty" db:"first_name"`
