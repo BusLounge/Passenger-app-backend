@@ -997,7 +997,7 @@ func (h *BookingOrchestratorHandler) PayHereWebhook(c *gin.Context) {
 	var intent *models.BookingIntent
 
 	// Try by payment_reference (e.g. "INT-d0411bcf")
-	intent, err := h.orchestratorService.GetIntentByPaymentReference(payload.OrderID)
+	intent, err := h.orchestratorService.GetIntentByPaymentUID(payload.OrderID)
 	if err != nil || intent == nil {
 		// Try parsing as a UUID and looking up by ID directly
 		if intentUUID, parseErr := uuid.Parse(payload.OrderID); parseErr == nil {

@@ -154,7 +154,6 @@ func (h *AppBookingHandler) CreateBooking(c *gin.Context) {
 	booking := &models.MasterBooking{
 		UserID:         userCtx.UserID.String(),
 		BookingType:    models.BookingTypeBusOnly,
-		BusTotal:       totalFare,
 		Subtotal:       totalFare,
 		TotalAmount:    totalFare,
 		PaymentStatus:  models.MasterPaymentCollectOnBus,
@@ -700,13 +699,13 @@ func (h *AppBookingHandler) GetBookingQR(c *gin.Context) {
 		return
 	}
 
-	if booking.BusBooking == nil || booking.BusBooking.QRCodeData == nil {
+	if booking.QRCodeData == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "QR code not available"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"qr_code":            *booking.BusBooking.QRCodeData,
+		"qr_code":            *booking.QRCodeData,
 		"booking_reference":  booking.BookingReference,
 		"passenger_name":     booking.PassengerName,
 		"route_name":         booking.BusBooking.RouteName,

@@ -121,7 +121,6 @@ func (s *BookingOrchestratorService) CreateIntent(
 		IntentType:     req.IntentType,
 		Status:         models.IntentStatusHeld,
 		Currency:       s.config.DefaultCurrency,
-		PaymentGateway: "payable",
 		ExpiresAt:      expiresAt,
 		IdempotencyKey: req.IdempotencyKey,
 	}
@@ -902,6 +901,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 	// 7. Create actual bookings in a transaction
 	var busBookingID, preLoungeBookingID, transitLoungeBookingID, postLoungeBookingID *uuid.UUID
 	var returnBusBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID *uuid.UUID
+	_, _, _ = returnBusBookingID, returnPreLoungeBookingID, returnPostLoungeBookingID
 	var masterRef string
 	var masterBookingID *uuid.UUID
 
