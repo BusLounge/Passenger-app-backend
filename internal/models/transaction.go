@@ -31,7 +31,11 @@ func (pb TransactionPriceBreakdown) Value() (driver.Value, error) {
 	if len(pb) == 0 {
 		return nil, nil
 	}
-	return json.Marshal(pb)
+	b, err := json.Marshal(pb)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 // Scan makes TransactionPriceBreakdown implement the sql.Scanner interface.
