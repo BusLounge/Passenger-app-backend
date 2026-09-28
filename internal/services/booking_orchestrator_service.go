@@ -125,6 +125,19 @@ func (s *BookingOrchestratorService) CreateIntent(
 		IdempotencyKey: req.IdempotencyKey,
 	}
 
+	// Capture passenger details from request if provided
+	if req.Bus != nil {
+		pName := req.Bus.PassengerName
+		pPhone := req.Bus.PassengerPhone
+		intent.PassengerName = &pName
+		intent.PassengerPhone = &pPhone
+	} else if req.PreTripLounge != nil && len(req.PreTripLounge.Guests) > 0 {
+		gName := req.PreTripLounge.Guests[0].GuestName
+		gPhone := req.PreTripLounge.Guests[0].GuestPhone
+		intent.PassengerName = &gName
+		intent.PassengerPhone = gPhone
+	}
+
 	// Initialize Legs array
 	intent.Legs = make([]models.BookingIntentLeg, 0)
 	var seq int = 1
@@ -1231,10 +1244,23 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 				legSeats := make([]models.BusBookingSeat, len(leg.Seats))
 				for i, intentSeat := range leg.Seats {
 					tripSeatID := intentSeat.TripSeatID // Capture by value
+					
+					pName := intentSeat.PassengerName
+					if pName == "" {
+						pName = payload.PassengerName
+					}
+					var pPhone *string
+					if intentSeat.PassengerPhone == nil || *intentSeat.PassengerPhone == "" {
+						phoneVal := payload.PassengerPhone
+						pPhone = &phoneVal
+					} else {
+						pPhone = intentSeat.PassengerPhone
+					}
+					
 					legSeats[i] = models.BusBookingSeat{
 						TripSeatID:         &tripSeatID,
-						PassengerName:      intentSeat.PassengerName,
-						PassengerPhone:     intentSeat.PassengerPhone,
+						PassengerName:      pName,
+						PassengerPhone:     pPhone,
 						PassengerGender:    intentSeat.PassengerGender,
 						IsPrimaryPassenger: intentSeat.IsPrimary,
 						Status:             models.SeatBookingBooked,
@@ -1267,10 +1293,23 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 			legSeats := make([]models.BusBookingSeat, len(payload.Seats))
 			for i, intentSeat := range payload.Seats {
 				tripSeatID := intentSeat.TripSeatID // Capture by value
+				
+				pName := intentSeat.PassengerName
+				if pName == "" {
+					pName = payload.PassengerName
+				}
+				var pPhone *string
+				if intentSeat.PassengerPhone == nil || *intentSeat.PassengerPhone == "" {
+					phoneVal := payload.PassengerPhone
+					pPhone = &phoneVal
+				} else {
+					pPhone = intentSeat.PassengerPhone
+				}
+				
 				legSeats[i] = models.BusBookingSeat{
 					TripSeatID:         &tripSeatID,
-					PassengerName:      intentSeat.PassengerName,
-					PassengerPhone:     intentSeat.PassengerPhone,
+					PassengerName:      pName,
+					PassengerPhone:     pPhone,
 					PassengerGender:    intentSeat.PassengerGender,
 					IsPrimaryPassenger: intentSeat.IsPrimary,
 					Status:             models.SeatBookingBooked,
