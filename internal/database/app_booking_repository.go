@@ -90,9 +90,9 @@ func (r *AppBookingRepository) GenerateBusBookingQR() (string, error) {
 		timestampStr := time.Now().Format("20060102150405")
 		qrData := fmt.Sprintf("QR-%s-%s", timestampStr, randomStr)
 
-		// Check if exists
+		// Check if exists - QR is stored on master bookings table, not bus_bookings
 		var count int
-		err := r.db.Get(&count, `SELECT COUNT(*) FROM bus_bookings WHERE qr_code_data = $1`, qrData)
+		err := r.db.Get(&count, `SELECT COUNT(*) FROM bookings WHERE qr_code_data = $1`, qrData)
 		if err != nil {
 			return "", fmt.Errorf("failed to check QR uniqueness: %w", err)
 		}
