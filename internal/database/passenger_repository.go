@@ -102,6 +102,32 @@ func (r *PassengerRepository) GetUserPhone(userID uuid.UUID) (string, error) {
 	return phone, nil
 }
 
+// GetUserEmailAndGender fetches the email and gender from the users table.
+func (r *PassengerRepository) GetUserEmailAndGender(userID uuid.UUID) (*string, *string, error) {
+	var email, gender sql.NullString
+	err := r.db.QueryRow(
+		"SELECT email, gender FROM users WHERE id = $1",
+		userID,
+	).Scan(&email, &gender)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed to get user email and gender: %w", err)
+	}
+	
+	var emailPtr, genderPtr *string
+	if email.Valid && email.String != "" {
+		emailPtr = &email.String
+	}
+	if gender.Valid && gender.String != "" {
+		genderPtr = &gender.String
+	}
+	
+	return emailPtr, genderPtr, nil
+}
+
 func (r *PassengerRepository) GetPassengerByID(id uuid.UUID) (*models.Passenger, error) {
 	var passenger models.Passenger
 

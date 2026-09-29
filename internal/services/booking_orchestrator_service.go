@@ -125,12 +125,47 @@ func (s *BookingOrchestratorService) CreateIntent(
 		IdempotencyKey: req.IdempotencyKey,
 	}
 
+	// Fetch user details for defaults if missing
+	userEmail, userGender, err := s.passengerRepo.GetUserEmailAndGender(userID)
+	if err != nil {
+		s.logger.WithError(err).Warn("Failed to fetch user email and gender for defaults")
+	}
+
 	// Capture passenger details from request if provided
 	if req.Bus != nil {
 		pName := req.Bus.PassengerName
 		pPhone := req.Bus.PassengerPhone
 		intent.PassengerName = &pName
 		intent.PassengerPhone = &pPhone
+		
+		// Set defaults for email and gender if not provided
+		if req.Bus.PassengerEmail == nil || *req.Bus.PassengerEmail == "" {
+			req.Bus.PassengerEmail = userEmail
+		}
+		for i := range req.Bus.Seats {
+			if req.Bus.Seats[i].PassengerGender == nil || *req.Bus.Seats[i].PassengerGender == "" {
+				req.Bus.Seats[i].PassengerGender = userGender
+			}
+		}
+		
+		if req.ReturnBus != nil {
+			if req.ReturnBus.PassengerEmail == nil || *req.ReturnBus.PassengerEmail == "" {
+				req.ReturnBus.PassengerEmail = userEmail
+			}
+			for i := range req.ReturnBus.Seats {
+				if req.ReturnBus.Seats[i].PassengerGender == nil || *req.ReturnBus.Seats[i].PassengerGender == "" {
+					req.ReturnBus.Seats[i].PassengerGender = userGender
+				}
+			}
+		}
+		
+		for legIdx := range req.Bus.Legs {
+			for i := range req.Bus.Legs[legIdx].Seats {
+				if req.Bus.Legs[legIdx].Seats[i].PassengerGender == nil || *req.Bus.Legs[legIdx].Seats[i].PassengerGender == "" {
+					req.Bus.Legs[legIdx].Seats[i].PassengerGender = userGender
+				}
+			}
+		}
 	} else if req.PreTripLounge != nil && len(req.PreTripLounge.Guests) > 0 {
 		gName := req.PreTripLounge.Guests[0].GuestName
 		gPhone := req.PreTripLounge.Guests[0].GuestPhone
