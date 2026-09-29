@@ -730,6 +730,8 @@ func main() {
 			loungeBookings.GET("/reference/:reference", loungeBookingHandler.GetLoungeBookingByReference)
 			logger.Info("  ✅ POST /api/v1/lounge-bookings/:id/cancel - Cancel booking")
 			loungeBookings.POST("/:id/cancel", loungeBookingHandler.CancelLoungeBooking)
+			logger.Info("  ✅ POST /api/v1/lounge-bookings/:id/transport - Add transport to lounge booking")
+			loungeBookings.POST("/:id/transport", bookingOrchestratorHandler.AddTransportToLoungeBooking)
 
 			// Staff operations
 			logger.Info("  ✅ POST /api/v1/lounge-bookings/:id/check-in - Check in guest")
@@ -928,6 +930,8 @@ func main() {
 			appBookings.POST("/:id/confirm-payment", appBookingHandler.ConfirmPayment)
 			logger.Info("  ✅ POST /api/v1/bookings/:id/cancel - Cancel booking")
 			appBookings.POST("/:id/cancel", appBookingHandler.CancelBooking)
+			logger.Info("  ✅ POST /api/v1/bookings/:id/transport - Add transport to master booking")
+			appBookings.POST("/:id/transport", bookingOrchestratorHandler.AddTransportToMasterBooking)
 			logger.Info("  ✅ GET /api/v1/bookings/:id/qr - Get booking QR code")
 			appBookings.GET("/:id/qr", appBookingHandler.GetBookingQR)
 		}

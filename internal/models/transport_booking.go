@@ -52,3 +52,19 @@ type TransportBooking struct {
 	PickupLocationName *string `json:"pickup_location_name,omitempty" db:"pickup_location_name"`
 	LoungeName         *string `json:"lounge_name,omitempty" db:"lounge_name"`
 }
+
+// AddTransportRequest represents the request to add transport to an existing booking
+type AddTransportRequest struct {
+	PickupLocationID         string  `json:"pickup_location_id"`
+	VehicleType              string  `json:"vehicle_type"`
+	VehicleQuantity          int     `json:"vehicle_quantity"`
+	TransportPrice           float64 `json:"transport_price"`
+	TransportDate            string  `json:"transport_date"`
+	TransportTime            string  `json:"transport_time"`
+	EstimatedDurationMinutes int     `json:"estimated_duration_minutes"`
+	PassengerName            string  `json:"passenger_name"`
+	PassengerPhone           string  `json:"passenger_phone"`
+	IsPreTrip                bool    `json:"is_pre_trip"`
+	PaymentMethod            string  `json:"payment_method"`
+	LoungeTransportType      string  `json:"lounge_transport_type"`
+}

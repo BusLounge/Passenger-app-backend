@@ -2203,3 +2203,149 @@ func (s *BookingOrchestratorService) buildPartialAvailabilityError(
 func (s *BookingOrchestratorService) GetIntentsByUser(userID uuid.UUID, limit, offset int) ([]*models.BookingIntent, error) {
 	return s.intentRepo.GetIntentsByUserID(userID, limit, offset)
 }
+
+// AddTransportToBooking creates a transport booking and handles its payment initiation
+// Returns a map with payment redirect data or direct success message
+func (s *BookingOrchestratorService) AddTransportToBooking(
+	userID string,
+	masterBookingID *string,
+	loungeBookingID *string,
+	req *models.AddTransportRequest,
+) (map[string]interface{}, error) {
+	s.logger.WithFields(logrus.Fields{
+		"user_id":        userID,
+		"master_id":      masterBookingID,
+		"lounge_id":      loungeBookingID,
+		"payment_method": req.PaymentMethod,
+		"transport_price": req.TransportPrice,
+	}).Info("Adding transport to booking")
+
+	// 1. Create the transport booking record
+	transportDate, err := time.Parse("2006-01-02", req.TransportDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transport_date format: %v", err)
+	}
+
+	transportTime, err := time.Parse("15:04", req.TransportTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transport_time format: %v", err)
+	}
+
+	// Combine date and time
+	combinedTime := time.Date(transportDate.Year(), transportDate.Month(), transportDate.Day(),
+		transportTime.Hour(), transportTime.Minute(), 0, 0, time.UTC)
+
+	bookingID := uuid.New().String()
+	cancellationReason := ""
+	refundStatus := ""
+
+	var loungeTransportType *string
+	if req.LoungeTransportType != "" {
+		loungeTransportType = &req.LoungeTransportType
+	}
+
+	transportBooking := &models.TransportBooking{
+		ID:                       bookingID,
+		BookingID:                masterBookingID,
+		UserID:                   userID,
+		LoungeID:                 loungeBookingID,
+		PickupLocationID:         &req.PickupLocationID,
+		VehicleType:              req.VehicleType,
+		VehicleQuantity:          req.VehicleQuantity,
+		TransportPrice:           req.TransportPrice,
+		TransportDate:            transportDate,
+		TransportTime:            combinedTime,
+		EstimatedDurationMinutes: &req.EstimatedDurationMinutes,
+		Status:                   models.TransportBookingPending,
+		PaymentStatus:            models.TransportPaymentPending,
+		LoungeTransportType:      loungeTransportType,
+		CancellationReason:       &cancellationReason,
+		RefundStatus:             &refundStatus,
+		RefundAmount:             0,
+	}
+
+	// Generate Invoice ID
+	invoiceID := fmt.Sprintf("TRP-%s-%d", bookingID[0:8], time.Now().Unix())
+
+	// 2. Handle Payment Logic
+	if req.PaymentMethod == "wallet" {
+		// Quick Wallet Deduction
+		wallet, err := s.walletService.GetWalletData(uuid.MustParse(userID))
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch wallet: %v", err)
+		}
+
+		balance, ok := wallet["balance"].(float64)
+		if !ok || balance < req.TransportPrice {
+			return nil, fmt.Errorf("insufficient wallet balance")
+		}
+
+		err = s.walletService.DeductBalance(
+			uuid.MustParse(userID),
+			req.TransportPrice,
+			bookingID,
+			"Transport Addon Payment",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("wallet deduction failed: %v", err)
+		}
+
+		transportBooking.Status = models.TransportBookingConfirmed
+		transportBooking.PaymentStatus = models.TransportPaymentPaid
+
+		err = s.transportBookingRepo.CreateTransportBooking(transportBooking)
+		if err != nil {
+			return nil, fmt.Errorf("failed to save transport booking: %v", err)
+		}
+
+		return map[string]interface{}{
+			"message":      "Transport booked and paid successfully via wallet",
+			"transport_id": bookingID,
+			"status":       "paid",
+		}, nil
+
+	} else if req.PaymentMethod == "card" || req.PaymentMethod == "card_on_delivery" || req.PaymentMethod == "payment_gateway" {
+		// Assume PAYable for online payment
+		err = s.transportBookingRepo.CreateTransportBooking(transportBooking)
+		if err != nil {
+			return nil, fmt.Errorf("failed to save transport booking: %v", err)
+		}
+
+		// Initiate PAYable Request
+		payResp, err := s.payableService.InitiatePayment(&InitiatePaymentParams{
+			InvoiceID:        invoiceID,
+			Amount:           fmt.Sprintf("%.2f", req.TransportPrice),
+			CurrencyCode:     "LKR",
+			CustomerName:     req.PassengerName,
+			CustomerPhone:    req.PassengerPhone,
+			CustomerEmail:    "customer@smarttransit.lk",
+			OrderDescription: "Transport Addon",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to initiate payment gateway: %v", err)
+		}
+
+		return map[string]interface{}{
+			"message":           "Payment initiated",
+			"transport_id":      bookingID,
+			"status":            "pending",
+			"payment_url":       payResp.PaymentPage,
+			"payment_reference": invoiceID,
+		}, nil
+	}
+
+	// Default: Cash or other deferred payments
+	transportBooking.Status = models.TransportBookingPending
+	// The driver/app handles actual completion of cash payment.
+
+	err = s.transportBookingRepo.CreateTransportBooking(transportBooking)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save transport booking: %v", err)
+	}
+
+	return map[string]interface{}{
+		"message":      "Transport booked via cash/default successfully",
+		"transport_id": bookingID,
+		"status":       "pending",
+	}, nil
+}

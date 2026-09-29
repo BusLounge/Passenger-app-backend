@@ -1026,7 +1026,58 @@ func (h *BookingOrchestratorHandler) PayHereWebhook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Booking confirmation failed"})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "Booking Confirmed"})
+}
+
+// AddTransportToLoungeBooking handles adding transport to a lounge booking
+// @Summary Add transport to lounge booking
+// @Router /api/v1/lounge-bookings/{id}/transport [post]
+func (h *BookingOrchestratorHandler) AddTransportToLoungeBooking(c *gin.Context) {
+	h.addTransportToBooking(c, false)
+}
+
+// AddTransportToMasterBooking handles adding transport to a master booking
+// @Summary Add transport to master booking
+// @Router /api/v1/bookings/{id}/transport [post]
+func (h *BookingOrchestratorHandler) AddTransportToMasterBooking(c *gin.Context) {
+	h.addTransportToBooking(c, true)
+}
+
+func (h *BookingOrchestratorHandler) addTransportToBooking(c *gin.Context, isMaster bool) {
+	userCtx, exists := middleware.GetUserContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	bookingID := c.Param("id")
+	if bookingID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "booking id is required"})
+		return
+	}
+
+	var req models.AddTransportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	var masterID *string
+	var loungeID *string
+
+	if isMaster {
+		masterID = &bookingID
+	} else {
+		loungeID = &bookingID
+	}
+
+	resp, err := h.orchestratorService.AddTransportToBooking(userCtx.UserID.String(), masterID, loungeID, &req)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to add transport to booking")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
