@@ -965,6 +965,49 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 		busBookingID = &busBookingUUID
 		masterRef = bookingRef
 		masterBookingID = masterID
+	} else {
+		// For intents without a bus booking (e.g. lounge_only), we must still create a master booking record.
+		pName := ""
+		if intent.PassengerName != nil {
+			pName = *intent.PassengerName
+		} else if intent.GetPreTripLoungeIntent() != nil && len(intent.GetPreTripLoungeIntent().Guests) > 0 {
+			pName = intent.GetPreTripLoungeIntent().Guests[0].GuestName
+		}
+		
+		pPhone := ""
+		if intent.PassengerPhone != nil {
+			pPhone = *intent.PassengerPhone
+		}
+
+		bType := models.BookingTypeLoungeOnly
+		if intent.IntentType != models.IntentTypeLoungeOnly {
+			bType = models.BookingType(intent.IntentType)
+		}
+
+		masterBooking := &models.MasterBooking{
+			UserID:          intent.UserID.String(),
+			BookingType:     bType,
+			BookingIntentID: intent.ID.String(),
+			Subtotal:        intent.TotalAmount,
+			TotalAmount:     intent.TotalAmount,
+			PaymentStatus:   models.MasterPaymentPaid,
+			BookingStatus:   models.MasterBookingConfirmed,
+			PassengerName:   pName,
+			PassengerPhone:  pPhone,
+			BookingSource:   models.BookingSourceApp,
+		}
+
+		userEmail, _, _ := s.passengerRepo.GetUserEmailAndGender(intent.UserID)
+		masterBooking.PassengerEmail = userEmail
+
+		response, err := s.appBookingRepo.CreateBooking(masterBooking, nil, nil, s.tripSeatRepo)
+		if err != nil {
+			s.intentRepo.UpdateIntentConfirmationFailed(intent.ID)
+			return nil, fmt.Errorf("failed to create master booking: %w", err)
+		}
+		masterID, _ := uuid.Parse(response.Booking.ID)
+		masterBookingID = &masterID
+		masterRef = response.Booking.BookingReference
 	}
 
 	// Create pre-trip lounge booking if present
