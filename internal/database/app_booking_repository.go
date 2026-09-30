@@ -481,7 +481,7 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
 			) as departure_datetime, 
 			bb.number_of_seats,
-			bb.status as bus_status, bb.qr_code_data,
+			bb.status as bus_status, b.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -525,7 +525,7 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
 			) as departure_datetime, 
 			bb.number_of_seats,
-			bb.status as bus_status, bb.qr_code_data,
+			bb.status as bus_status, b.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -564,7 +564,7 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 			bor.custom_route_name as route_name, 
 			st.departure_datetime, 
 			bb.number_of_seats,
-			bb.status as bus_status, bb.qr_code_data,
+			bb.status as bus_status, b.qr_code_data,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -717,7 +717,7 @@ func (r *AppBookingRepository) GetBusBookingByID(busBookingID string) (*models.B
 		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
 		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
 		       bb.cancelled_at, bb.cancellation_reason,
-		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
+		       bb.special_requests,
 		       bb.created_at, bb.updated_at
 		FROM bus_bookings bb
 		WHERE bb.id = $1`
@@ -749,7 +749,7 @@ func (r *AppBookingRepository) GetBusBookingByBookingID(bookingID string) (*mode
 		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
 		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
 		       bb.cancelled_at, bb.cancellation_reason,
-		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
+		       bb.special_requests,
 		       bb.created_at, bb.updated_at, COALESCE(bb.is_return, false) as is_return
 		FROM bus_bookings bb
 		WHERE bb.booking_id = $1
@@ -783,7 +783,7 @@ func (r *AppBookingRepository) GetBusBookingsByBookingID(bookingID string) ([]*m
 		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
 		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
 		       bb.cancelled_at, bb.cancellation_reason,
-		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
+		       bb.special_requests,
 		       bb.created_at, bb.updated_at, COALESCE(bb.is_return, false) as is_return
 		FROM bus_bookings bb
 		WHERE bb.booking_id = $1
@@ -818,10 +818,11 @@ func (r *AppBookingRepository) GetBusBookingByQRCode(qrCode string) (*models.Bus
 		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
 		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
 		       bb.cancelled_at, bb.cancellation_reason,
-		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
+		       bb.special_requests,
 		       bb.created_at, bb.updated_at
 		FROM bus_bookings bb
-		WHERE bb.qr_code_data = $1`
+		JOIN bookings b ON b.id = bb.booking_id
+		WHERE b.qr_code_data = $1`
 
 	err := r.db.Get(busBooking, query, qrCode)
 	if err != nil {
@@ -923,7 +924,7 @@ func (r *AppBookingRepository) GetBusBookingsByTripID(tripID string) ([]models.B
 		       bb.status, bb.checked_in_at, bb.checked_in_by_user_id,
 		       bb.boarded_at, bb.boarded_by_user_id, bb.completed_at,
 		       bb.cancelled_at, bb.cancellation_reason,
-		       bb.qr_code_data, bb.qr_generated_at, bb.special_requests,
+		       bb.special_requests,
 		       bb.created_at, bb.updated_at
 		FROM bus_bookings bb
 		WHERE bb.scheduled_trip_id = $1 AND bb.status != 'cancelled'
