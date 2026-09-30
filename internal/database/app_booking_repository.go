@@ -344,7 +344,8 @@ func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.
 		       booking_status, passenger_name, passenger_phone, passenger_email,
 		       confirmed_at, cancelled_at, cancellation_reason, cancelled_by_user_id,
 		       completed_at, refund_amount, refund_reference, refunded_at,
-		       booking_source, device_info, notes, search_from_lounge, search_to_lounge, created_at, updated_at
+		       booking_source, device_info, notes, search_from_lounge, search_to_lounge,
+		       qr_code_data, qr_generated_at, created_at, updated_at
 		FROM bookings WHERE booking_reference = $1`
 
 	err := r.db.Get(booking, query, reference)

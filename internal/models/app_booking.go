@@ -372,6 +372,7 @@ type BookingListItem struct {
 	DepartureDatetime *time.Time        `json:"departure_datetime,omitempty" db:"departure_datetime"`
 	NumberOfSeats     *int              `json:"number_of_seats,omitempty" db:"number_of_seats"`
 	BusStatus         *BusBookingStatus `json:"bus_status,omitempty" db:"bus_status"`
+	QRCodeData        *string           `json:"qr_code_data,omitempty" db:"qr_code_data"`
 
 	// Search Data
 	SearchFromLounge *string `json:"search_from_lounge,omitempty" db:"search_from_lounge"`
