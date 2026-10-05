@@ -655,6 +655,9 @@ func (s *BookingOrchestratorService) processLoungeIntent(
 		LoungeID:                  req.LoungeID,
 		LoungeName:                lounge.LoungeName,
 		PricingType:               req.PricingType,
+		Date:                      req.Date,
+		CheckInTime:               req.CheckInTime,
+		CheckOutTime:              req.CheckOutTime,
 		GuestCount:                guestCount,
 		Guests:                    guests,
 		PreOrders:                 preOrders,
@@ -955,7 +958,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 
 	// Create bus booking if present
 	if intent.GetBusIntent() != nil {
-		busBooking, bookingRef, masterID, err := s.createBusBookingFromIntent(intent)
+		busBooking, bookingRef, masterID, err := s.createBusBookingFromIntent(intent, paymentReference, paymentGateway)
 		if err != nil {
 			// Mark as confirmation failed
 			s.intentRepo.UpdateIntentConfirmationFailed(intent.ID)
@@ -984,17 +987,22 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 			bType = models.BookingType(intent.IntentType)
 		}
 
+		now := time.Now()
 		masterBooking := &models.MasterBooking{
-			UserID:          intent.UserID.String(),
-			BookingType:     bType,
-			BookingIntentID: intent.ID.String(),
-			Subtotal:        intent.TotalAmount,
-			TotalAmount:     intent.TotalAmount,
-			PaymentStatus:   models.MasterPaymentPaid,
-			BookingStatus:   models.MasterBookingConfirmed,
-			PassengerName:   pName,
-			PassengerPhone:  pPhone,
-			BookingSource:   models.BookingSourceApp,
+			UserID:           intent.UserID.String(),
+			BookingType:      bType,
+			BookingIntentID:  intent.ID.String(),
+			Subtotal:         intent.TotalAmount,
+			TotalAmount:      intent.TotalAmount,
+			PaymentStatus:    models.MasterPaymentPaid,
+			PaymentGateway:   paymentGateway,
+			PaymentReference: paymentReference,
+			PaymentMethod:    paymentGateway, // Fallback mapping as method is not explicitly passed
+			PaidAt:           &now,
+			BookingStatus:    models.MasterBookingConfirmed,
+			PassengerName:    pName,
+			PassengerPhone:   pPhone,
+			BookingSource:    models.BookingSourceApp,
 		}
 
 		userEmail, _, _ := s.passengerRepo.GetUserEmailAndGender(intent.UserID)
@@ -1214,7 +1222,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 }
 
 // createBusBookingFromIntent creates a bus booking from intent data
-func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.BookingIntent) (*models.BusBooking, string, *uuid.UUID, error) {
+func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.BookingIntent, paymentReference *string, paymentGateway *string) (*models.BusBooking, string, *uuid.UUID, error) {
 	busIntent := intent.GetBusIntent()
 
 	// Critical: scheduled_trip_id must be a valid non-empty UUID string.
@@ -1254,6 +1262,7 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 		loungeTransportTotal += tr.TransportPrice
 	}
 
+	now := time.Now()
 	// Build master booking
 	masterBooking := &models.MasterBooking{
 		UserID:               intent.UserID.String(),
@@ -1262,6 +1271,10 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 		Subtotal:             totalAmount,
 		TotalAmount:          totalAmount,
 		PaymentStatus:        models.MasterPaymentPaid, // Paid via intent
+		PaymentGateway:       paymentGateway,
+		PaymentReference:     paymentReference,
+		PaymentMethod:        paymentGateway, // Fallback mapping
+		PaidAt:               &now,
 		BookingStatus:        models.MasterBookingConfirmed,
 		PassengerName:        busIntent.PassengerName,
 		PassengerPhone:       busIntent.PassengerPhone,
@@ -1444,10 +1457,30 @@ func (s *BookingOrchestratorService) createLoungeBookingFromIntent(
 
 	// Parse scheduled arrival from intent date/time
 	scheduledArrival := time.Now().Add(time.Hour) // Default fallback
+
+
+
 	if loungeIntent.Date != "" && loungeIntent.CheckInTime != "" {
-		parsedTime, err := time.Parse("2006-01-02 15:04", loungeIntent.Date+" "+loungeIntent.CheckInTime)
-		if err == nil {
-			scheduledArrival = parsedTime
+		// Try to clean date in case it's an ISO string, we just want the first 10 chars for 2006-01-02
+		dateStr := loungeIntent.Date
+		if len(dateStr) >= 10 {
+			dateStr = dateStr[:10]
+		}
+		
+		timeStr := dateStr + " " + loungeIntent.CheckInTime
+		
+		formats := []string{
+			"2006-01-02 15:04",
+			"2006-01-02 15:04:05",
+			"2006-01-02 03:04 PM",
+			time.RFC3339,
+		}
+		
+		for _, layout := range formats {
+			if pt, err := time.ParseInLocation(layout, timeStr, time.Local); err == nil {
+				scheduledArrival = pt
+				break
+			}
 		}
 	}
 
@@ -2034,12 +2067,96 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 		"new_total":           newTotal,
 	}).Info("AddLoungeToIntent: Saving lounge data to intent")
 
-	// AddLoungeToIntent is obsolete. In the returned legs model, the orchestrator should insert multiple models.BookingIntentLeg into the DB directly.
-	// For now we stub this out for compilation.
-	err = nil
+	// Prepare new legs
+	var newLegs []models.BookingIntentLeg
+	maxSeq := 1
+	for _, leg := range intent.Legs {
+		if leg.SequenceOrder >= maxSeq {
+			maxSeq = leg.SequenceOrder + 1
+		}
+	}
+
+	if preTripLounge != nil {
+		loungeJson, _ := json.Marshal(preTripLounge)
+		newLegs = append(newLegs, models.BookingIntentLeg{
+			ID:              uuid.New(),
+			BookingIntentID: intent.ID,
+			LegType:         models.LegTypeLoungePreOutbound,
+			LegIntent:       loungeJson,
+			Fare:            preTripLounge.TotalPrice,
+			SequenceOrder:   maxSeq,
+			CreatedAt:       time.Now(),
+		})
+		maxSeq++
+	}
+
+	if transitLounge != nil {
+		loungeJson, _ := json.Marshal(transitLounge)
+		newLegs = append(newLegs, models.BookingIntentLeg{
+			ID:              uuid.New(),
+			BookingIntentID: intent.ID,
+			LegType:         models.LegTypeTransitLounge,
+			LegIntent:       loungeJson,
+			Fare:            transitLounge.TotalPrice,
+			SequenceOrder:   maxSeq,
+			CreatedAt:       time.Now(),
+		})
+		maxSeq++
+	}
+
+	if postTripLounge != nil {
+		loungeJson, _ := json.Marshal(postTripLounge)
+		newLegs = append(newLegs, models.BookingIntentLeg{
+			ID:              uuid.New(),
+			BookingIntentID: intent.ID,
+			LegType:         models.LegTypeLoungePostOutbound,
+			LegIntent:       loungeJson,
+			Fare:            postTripLounge.TotalPrice,
+			SequenceOrder:   maxSeq,
+			CreatedAt:       time.Now(),
+		})
+		maxSeq++
+	}
+
+	if returnPreTripLounge != nil {
+		loungeJson, _ := json.Marshal(returnPreTripLounge)
+		newLegs = append(newLegs, models.BookingIntentLeg{
+			ID:              uuid.New(),
+			BookingIntentID: intent.ID,
+			LegType:         models.LegTypeLoungePreReturn,
+			LegIntent:       loungeJson,
+			Fare:            returnPreTripLounge.TotalPrice,
+			SequenceOrder:   maxSeq,
+			CreatedAt:       time.Now(),
+		})
+		maxSeq++
+	}
+
+	if returnPostTripLounge != nil {
+		loungeJson, _ := json.Marshal(returnPostTripLounge)
+		newLegs = append(newLegs, models.BookingIntentLeg{
+			ID:              uuid.New(),
+			BookingIntentID: intent.ID,
+			LegType:         models.LegTypeLoungePostReturn,
+			LegIntent:       loungeJson,
+			Fare:            returnPostTripLounge.TotalPrice,
+			SequenceOrder:   maxSeq,
+			CreatedAt:       time.Now(),
+		})
+		maxSeq++
+	}
+
+	// Persist the changes to the database
+	err = s.intentRepo.UpdateIntentPricingAndLegs(intent.ID, newTotal, updatedSnapshot, newExpiresAt, newLegs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update intent with lounges: %w", err)
 	}
+
+	// Also update the loaded intent so the response is correct
+	intent.TotalAmount = newTotal
+	intent.PricingSnapshot = updatedSnapshot
+	intent.ExpiresAt = newExpiresAt
+	intent.Legs = append(intent.Legs, newLegs...)
 
 	s.logger.WithField("intent_id", intent.ID).Info("AddLoungeToIntent: Lounge data saved successfully")
 

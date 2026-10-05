@@ -249,6 +249,46 @@ func (r *BookingIntentRepository) UpdateIntentCancelled(intentID uuid.UUID) erro
 	return err
 }
 
+// UpdateIntentPricingAndLegs updates an intent's pricing snapshot, total amount, expiration, and stores new legs.
+func (r *BookingIntentRepository) UpdateIntentPricingAndLegs(intentID uuid.UUID, totalAmount float64, pricingSnapshot models.PricingSnapshot, expiresAt time.Time, newLegs []models.BookingIntentLeg) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	snapshotJSON, err := json.Marshal(pricingSnapshot)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pricing snapshot: %w", err)
+	}
+
+	query := `
+		UPDATE booking_intents 
+		SET total_amount = $1, pricing_snapshot = $2, expires_at = $3, updated_at = NOW()
+		WHERE id = $4`
+	_, err = tx.Exec(query, totalAmount, string(snapshotJSON), expiresAt, intentID)
+	if err != nil {
+		return err
+	}
+
+	for _, leg := range newLegs {
+		legQuery := `
+			INSERT INTO booking_intent_legs (
+				id, booking_intent_id, leg_type, leg_intent, fare, sequence_order, created_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7
+			)`
+		_, err = tx.Exec(legQuery,
+			leg.ID, leg.BookingIntentID, leg.LegType, leg.LegIntent, leg.Fare, leg.SequenceOrder, leg.CreatedAt,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 // UpdateIntentConfirmationFailed marks intent as confirmation failed (needs refund)
 func (r *BookingIntentRepository) UpdateIntentConfirmationFailed(intentID uuid.UUID) error {
 	query := `

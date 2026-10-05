@@ -153,21 +153,21 @@ func (r *AppBookingRepository) CreateBooking(
 			booking_reference, user_id, booking_intent_id, booking_type,
 			subtotal, discount_amount, tax_amount, total_amount,
 			promo_code, promo_discount_type, promo_discount_value,
-			payment_status, payment_method, booking_status,
+			payment_status, payment_method, payment_reference, payment_gateway, paid_at, booking_status,
 			passenger_name, passenger_phone, passenger_email,
 			booking_source, device_info, notes,
 			search_from_lounge, search_to_lounge, qr_code_data, qr_generated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
 			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
-			$21, $22, $23, $24
+			$21, $22, $23, $24, $25, $26, $27
 		) RETURNING id, created_at, updated_at`
 
 	err = tx.QueryRowx(bookingQuery,
 		booking.BookingReference, booking.UserID, booking.BookingIntentID, booking.BookingType,
 		booking.Subtotal, booking.DiscountAmount, booking.TaxAmount, booking.TotalAmount,
 		booking.PromoCode, booking.PromoDiscountType, booking.PromoDiscountValue,
-		booking.PaymentStatus, booking.PaymentMethod, booking.BookingStatus,
+		booking.PaymentStatus, booking.PaymentMethod, booking.PaymentReference, booking.PaymentGateway, booking.PaidAt, booking.BookingStatus,
 		booking.PassengerName, booking.PassengerPhone, booking.PassengerEmail,
 		booking.BookingSource, deviceInfoJSON, booking.Notes,
 		booking.SearchFromLounge, booking.SearchToLounge,

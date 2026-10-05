@@ -425,6 +425,9 @@ type BusIntentSeatRequest struct {
 type LoungeIntentRequest struct {
 	LoungeID         string                        `json:"lounge_id" binding:"required"`
 	PricingType      string                        `json:"pricing_type" binding:"required"` // "1_hour", "2_hours", "3_hours", "until_bus"
+	Date             string                        `json:"date,omitempty"`                  // e.g. "2025-12-15"
+	CheckInTime      string                        `json:"check_in_time,omitempty"`         // e.g. "09:00"
+	CheckOutTime     *string                       `json:"check_out_time,omitempty"`
 	Guests           []LoungeIntentGuestRequest    `json:"guests" binding:"required,min=1"`
 	PreOrders        []LoungeIntentPreOrderRequest `json:"pre_orders,omitempty"`
 
