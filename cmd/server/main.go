@@ -677,6 +677,12 @@ func main() {
 				loungesProtected.GET("/near-stop/wallet-bypass/confirm", walletHandler.ConfirmTopUp)
 				// We also add /data just in case they need to call getWalletData via a bypass later
 				loungesProtected.GET("/near-stop/wallet-bypass/data", walletHandler.GetWallet)
+
+				// BYPASS ROUTES FOR TRANSPORT BOOKINGS
+				logger.Info("  ✅ POST /api/v1/lounges/near-stop/transport/lounge/:id (protected)")
+				loungesProtected.POST("/near-stop/transport/lounge/:id", bookingOrchestratorHandler.AddTransportToLoungeBooking)
+				logger.Info("  ✅ POST /api/v1/lounges/near-stop/transport/master/:id (protected)")
+				loungesProtected.POST("/near-stop/transport/master/:id", bookingOrchestratorHandler.AddTransportToMasterBooking)
 			}
 		}
 		logger.Info("🏨 Lounge routes registered successfully")
