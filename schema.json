@@ -1,0 +1,17 @@
+[
+  {
+    "Conname": "fk_lb_bus_booking",
+    "Constraint": "FOREIGN KEY (bus_booking_id) REFERENCES bus_bookings(id) ON DELETE CASCADE",
+    "IsNullable": ""
+  },
+  {
+    "Conname": "fk_lb_master_booking",
+    "Constraint": "FOREIGN KEY (master_booking_id) REFERENCES bookings(id) ON DELETE CASCADE",
+    "IsNullable": ""
+  },
+  {
+    "Conname": "lounge_bookings_new_pkey",
+    "Constraint": "PRIMARY KEY (id)",
+    "IsNullable": ""
+  }
+]
