@@ -22,16 +22,18 @@ func (r *TransportBookingRepository) CreateTransportBooking(booking *models.Tran
 			booking_id, user_id, lounge_id, pickup_location_id,
 			vehicle_type, vehicle_quantity, transport_price, transport_date, transport_time,
 			estimated_duration_minutes, status, payment_status,
-			cancellation_reason, refund_status, refund_amount, lounge_transport_type
+			booking_reference, payment_reference, lounge_transport_type,
+			cancellation_reason, refund_status, refund_amount
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
 		) RETURNING id, created_at, updated_at`
 
 	err := r.db.QueryRowx(query,
 		nullableUUID(booking.BookingID), booking.UserID, nullableUUID(booking.LoungeID), nullableUUID(booking.PickupLocationID),
 		booking.VehicleType, booking.VehicleQuantity, booking.TransportPrice, booking.TransportDate, booking.TransportTime,
 		booking.EstimatedDurationMinutes, booking.Status, booking.PaymentStatus,
-		booking.CancellationReason, booking.RefundStatus, booking.RefundAmount, booking.LoungeTransportType,
+		booking.BookingReference, booking.PaymentReference, booking.LoungeTransportType,
+		booking.CancellationReason, booking.RefundStatus, booking.RefundAmount,
 	).Scan(&booking.ID, &booking.CreatedAt, &booking.UpdatedAt)
 
 	if err != nil {
@@ -48,8 +50,8 @@ func (r *TransportBookingRepository) GetTransportBookingsByUserID(userID string,
 			tb.id, tb.booking_id, tb.user_id, tb.lounge_id, tb.pickup_location_id,
 			tb.vehicle_type, tb.vehicle_quantity, tb.transport_price, tb.transport_date, tb.transport_time,
 			tb.estimated_duration_minutes, tb.status, tb.payment_status,
+			tb.booking_reference, tb.payment_reference, tb.lounge_transport_type,
 			tb.cancellation_reason, tb.refund_status, tb.refund_amount, tb.created_at, tb.updated_at,
-			tb.lounge_transport_type,
 			l.lounge_name, ptl.location as pickup_location_name
 		FROM transport_bookings tb
 		LEFT JOIN lounges l ON tb.lounge_id = l.id
@@ -71,8 +73,8 @@ func (r *TransportBookingRepository) GetTransportBookingByID(bookingID string) (
 			tb.id, tb.booking_id, tb.user_id, tb.lounge_id, tb.pickup_location_id,
 			tb.vehicle_type, tb.vehicle_quantity, tb.transport_price, tb.transport_date, tb.transport_time,
 			tb.estimated_duration_minutes, tb.status, tb.payment_status,
+			tb.booking_reference, tb.payment_reference, tb.lounge_transport_type,
 			tb.cancellation_reason, tb.refund_status, tb.refund_amount, tb.created_at, tb.updated_at,
-			tb.lounge_transport_type,
 			l.lounge_name, ptl.location as pickup_location_name
 		FROM transport_bookings tb
 		LEFT JOIN lounges l ON tb.lounge_id = l.id
@@ -95,8 +97,8 @@ func (r *TransportBookingRepository) GetTransportBookingsByBookingID(masterBooki
 			tb.id, tb.booking_id, tb.user_id, tb.lounge_id, tb.pickup_location_id,
 			tb.vehicle_type, tb.vehicle_quantity, tb.transport_price, tb.transport_date, tb.transport_time,
 			tb.estimated_duration_minutes, tb.status, tb.payment_status,
+			tb.booking_reference, tb.payment_reference, tb.lounge_transport_type,
 			tb.cancellation_reason, tb.refund_status, tb.refund_amount, tb.created_at, tb.updated_at,
-			tb.lounge_transport_type,
 			l.lounge_name, ptl.location as pickup_location_name
 		FROM transport_bookings tb
 		LEFT JOIN lounges l ON tb.lounge_id = l.id

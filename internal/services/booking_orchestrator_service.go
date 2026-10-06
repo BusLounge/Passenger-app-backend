@@ -2361,6 +2361,9 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 		loungeTransportType = &req.LoungeTransportType
 	}
 
+	// Generate Invoice ID
+	invoiceID := fmt.Sprintf("TRP-%s-%d", bookingID[0:8], time.Now().Unix())
+
 	transportBooking := &models.TransportBooking{
 		ID:                       bookingID,
 		BookingID:                masterBookingID,
@@ -2375,14 +2378,13 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 		EstimatedDurationMinutes: &req.EstimatedDurationMinutes,
 		Status:                   models.TransportBookingPending,
 		PaymentStatus:            models.TransportPaymentPending,
+		BookingReference:         invoiceID,
+		PaymentReference:         &invoiceID,
 		LoungeTransportType:      loungeTransportType,
 		CancellationReason:       &cancellationReason,
 		RefundStatus:             &refundStatus,
 		RefundAmount:             0,
 	}
-
-	// Generate Invoice ID
-	invoiceID := fmt.Sprintf("TRP-%s-%d", bookingID[0:8], time.Now().Unix())
 
 	// 2. Handle Payment Logic
 	if req.PaymentMethod == "wallet" {
