@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -2343,7 +2344,14 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 		return nil, fmt.Errorf("invalid transport_date format: %v", err)
 	}
 
-	transportTime, err := time.Parse("15:04", req.TransportTime)
+	timeStr := req.TransportTime
+	if strings.Contains(timeStr, "T") {
+		parts := strings.Split(timeStr, "T")
+		if len(parts) == 2 && len(parts[1]) >= 5 {
+			timeStr = parts[1][:5]
+		}
+	}
+	transportTime, err := time.Parse("15:04", timeStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transport_time format: %v", err)
 	}
