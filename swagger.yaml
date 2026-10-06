@@ -5445,6 +5445,176 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /api/v1/lounges/near-stop/transport/lounge/{id}:
+    post:
+      summary: Add transport to lounge booking (Choreo bypass)
+      description: Add transport service to an existing lounge booking. This route bypasses the Choreo API Gateway path restriction.
+      operationId: addTransportToLoungeBooking
+      tags:
+      - Lounge Bookings
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Lounge booking ID
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - vehicle_type
+              - transport_price
+              - transport_date
+              - transport_time
+              - payment_method
+              properties:
+                pickup_location_id:
+                  type: string
+                  format: uuid
+                vehicle_type:
+                  type: string
+                  example: car
+                vehicle_quantity:
+                  type: integer
+                  example: 1
+                transport_price:
+                  type: number
+                  format: float
+                  example: 180.00
+                transport_date:
+                  type: string
+                  format: date
+                  example: '2026-10-10'
+                transport_time:
+                  type: string
+                  example: '14:30'
+                estimated_duration_minutes:
+                  type: integer
+                  example: 30
+                passenger_name:
+                  type: string
+                passenger_phone:
+                  type: string
+                is_pre_trip:
+                  type: boolean
+                payment_method:
+                  type: string
+                  enum: [wallet, card, cash]
+                lounge_transport_type:
+                  type: string
+                  example: pickup
+      responses:
+        '200':
+          description: Transport added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  transport_id:
+                    type: string
+                  status:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/lounges/near-stop/transport/master/{id}:
+    post:
+      summary: Add transport to master booking (Choreo bypass)
+      description: Add transport service to an existing master/bus booking. This route bypasses the Choreo API Gateway path restriction.
+      operationId: addTransportToMasterBooking
+      tags:
+      - Lounge Bookings
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Master booking ID
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - vehicle_type
+              - transport_price
+              - transport_date
+              - transport_time
+              - payment_method
+              properties:
+                pickup_location_id:
+                  type: string
+                  format: uuid
+                vehicle_type:
+                  type: string
+                  example: car
+                vehicle_quantity:
+                  type: integer
+                  example: 1
+                transport_price:
+                  type: number
+                  format: float
+                  example: 180.00
+                transport_date:
+                  type: string
+                  format: date
+                  example: '2026-10-10'
+                transport_time:
+                  type: string
+                  example: '14:30'
+                estimated_duration_minutes:
+                  type: integer
+                  example: 30
+                passenger_name:
+                  type: string
+                passenger_phone:
+                  type: string
+                is_pre_trip:
+                  type: boolean
+                payment_method:
+                  type: string
+                  enum: [wallet, card, cash]
+                lounge_transport_type:
+                  type: string
+                  example: dropoff
+      responses:
+        '200':
+          description: Transport added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  transport_id:
+                    type: string
+                  status:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/lounge-orders:
     post:
       summary: Create lounge order
