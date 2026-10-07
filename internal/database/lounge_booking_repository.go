@@ -936,10 +936,57 @@ func (r *LoungeBookingRepository) GetOrdersByBookingID(bookingID uuid.UUID) ([]m
 	return orders, nil
 }
 
+// GetLoungeOrderByID returns a single order by ID
+func (r *LoungeBookingRepository) GetLoungeOrderByID(orderID uuid.UUID) (*models.LoungeOrder, error) {
+	var order models.LoungeOrder
+	query := `
+		SELECT id, lounge_booking_id, lounge_id, order_number, subtotal, 
+		       discount_amount, total_amount, status, payment_status, 
+		       payment_method, notes, prepared_by_staff, served_by_staff, 
+		       created_at, updated_at
+		FROM lounge_orders
+		WHERE id = $1
+	`
+	err := r.db.Get(&order, query, orderID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// Get items for the order
+	var items []models.LoungeOrderItem
+	itemQuery := `
+		SELECT id, order_id, product_id, product_name, quantity, unit_price, total_price, created_at
+		FROM lounge_order_items
+		WHERE order_id = $1
+		ORDER BY created_at ASC
+	`
+	err = r.db.Select(&items, itemQuery, orderID)
+	if err != nil {
+		return nil, err
+	}
+	order.Items = items
+
+	return &order, nil
+}
+
 // UpdateOrderStatus updates order status
 func (r *LoungeBookingRepository) UpdateOrderStatus(orderID uuid.UUID, status models.LoungeOrderStatus) error {
 	query := `UPDATE lounge_orders SET status = $2, updated_at = NOW() WHERE id = $1`
 	_, err := r.db.Exec(query, orderID, status)
+	return err
+}
+
+// UpdateOrderPaymentStatus updates the payment status, method, and potentially reference of an order
+func (r *LoungeBookingRepository) UpdateOrderPaymentStatus(orderID uuid.UUID, paymentStatus models.LoungeOrderPaymentStatus, paymentMethod *string, notes *string) error {
+	query := `
+		UPDATE lounge_orders 
+		SET payment_status = $2, payment_method = $3, notes = COALESCE($4, notes), updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := r.db.Exec(query, orderID, paymentStatus, paymentMethod, notes)
 	return err
 }
 

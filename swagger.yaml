@@ -99,6 +99,62 @@ tags:
 - name: Lounge Orders
   description: Lounge order management for food/beverages
 paths:
+  /api/v1/lounge-orders/{id}/pay:
+    post:
+      summary: Pay a lounge order
+      description: Pay a lounge order using a specific payment method (e.g., internal_wallet)
+      operationId: payLoungeOrder
+      tags:
+      - Lounge Orders
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: Order ID
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - payment_gateway
+              - payment_method
+              properties:
+                payment_gateway:
+                  type: string
+                  example: internal_wallet
+                payment_method:
+                  type: string
+                  example: wallet
+                payment_reference:
+                  type: string
+                  example: REF123
+      responses:
+        '200':
+          description: Payment confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Order payment successful
+                  order_id:
+                    type: string
+                    example: "uuid"
+                  status:
+                    type: string
+                    example: paid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /health:
     get:
       summary: Health check endpoint

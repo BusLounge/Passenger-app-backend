@@ -236,7 +236,7 @@ func main() {
 	// Initialize lounge booking system
 	logger.Info("🏨 Initializing lounge booking system...")
 	loungeBookingRepo := database.NewLoungeBookingRepository(sqlxDB.DB)
-	loungeBookingHandler := handlers.NewLoungeBookingHandler(loungeBookingRepo, loungeRepository, loungeOwnerRepository)
+	loungeBookingHandler := handlers.NewLoungeBookingHandler(loungeBookingRepo, loungeRepository, loungeOwnerRepository, nil)
 	logger.Info("✓ Lounge booking system initialized")
 
 	logger.Info("🔍 DEBUG: Lounge handlers initialized successfully")
@@ -320,6 +320,7 @@ func main() {
 	logger.Info("💰 Initializing Wallet system...")
 	walletRepository := database.NewWalletRepository(sqlxDB.DB)
 	walletService := services.NewWalletService(walletRepository, passengerRepository, smsGateway, 500.0, logger)
+	loungeBookingHandler.SetWalletService(walletService)
 	logger.Info("✓ Wallet system initialized")
 
 	// Initialize App Booking system (passenger app bookings)
@@ -758,6 +759,8 @@ func main() {
 			loungeOrders.POST("", loungeBookingHandler.CreateLoungeOrder)
 			logger.Info("  ✅ PUT /api/v1/lounge-orders/:id/status - Update order status")
 			loungeOrders.PUT("/:id/status", loungeBookingHandler.UpdateOrderStatus)
+			logger.Info("  ✅ POST /api/v1/lounge-orders/:id/pay - Pay lounge order")
+			loungeOrders.POST("/:id/pay", loungeBookingHandler.PayLoungeOrder)
 		}
 		logger.Info("🏨 Lounge Booking routes registered successfully")
 

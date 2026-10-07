@@ -12,6 +12,7 @@ import (
 	"github.com/smarttransit/sms-auth-backend/internal/database"
 	"github.com/smarttransit/sms-auth-backend/internal/middleware"
 	"github.com/smarttransit/sms-auth-backend/internal/models"
+	"github.com/smarttransit/sms-auth-backend/internal/services"
 )
 
 // LoungeBookingHandler handles lounge booking-related HTTP requests
@@ -19,6 +20,7 @@ type LoungeBookingHandler struct {
 	bookingRepo     *database.LoungeBookingRepository
 	loungeRepo      *database.LoungeRepository
 	loungeOwnerRepo *database.LoungeOwnerRepository
+	walletService   *services.WalletService
 }
 
 // NewLoungeBookingHandler creates a new lounge booking handler
@@ -26,12 +28,19 @@ func NewLoungeBookingHandler(
 	bookingRepo *database.LoungeBookingRepository,
 	loungeRepo *database.LoungeRepository,
 	loungeOwnerRepo *database.LoungeOwnerRepository,
+	walletService *services.WalletService,
 ) *LoungeBookingHandler {
 	return &LoungeBookingHandler{
 		bookingRepo:     bookingRepo,
 		loungeRepo:      loungeRepo,
 		loungeOwnerRepo: loungeOwnerRepo,
+		walletService:   walletService,
 	}
+}
+
+// SetWalletService sets the wallet service for the handler
+func (h *LoungeBookingHandler) SetWalletService(ws *services.WalletService) {
+	h.walletService = ws
 }
 
 // ============================================================================
@@ -1552,11 +1561,11 @@ func (h *LoungeBookingHandler) CreateLoungeOrder(c *gin.Context) {
 		return
 	}
 
-	// Verify booking is checked in
-	if booking.Status != models.LoungeBookingStatusCheckedIn {
+	// Verify booking is checked_in or confirmed (for pre-orders)
+	if booking.Status != models.LoungeBookingStatusCheckedIn && booking.Status != models.LoungeBookingStatusConfirmed {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "booking_not_active",
-			Message: "Orders can only be placed for checked-in bookings",
+			Message: "Orders can only be placed for confirmed or checked-in bookings",
 		})
 		return
 	}
@@ -1767,5 +1776,176 @@ func (h *LoungeBookingHandler) UpdateOrderStatus(c *gin.Context) {
 		"message":  "Order status updated",
 		"order_id": orderID,
 		"status":   req.Status,
+	})
+}
+
+// PayLoungeOrderRequest represents the request to pay an order
+type PayLoungeOrderRequest struct {
+	PaymentGateway   string  `json:"payment_gateway" binding:"required"`
+	PaymentMethod    string  `json:"payment_method" binding:"required"`
+	PaymentReference *string `json:"payment_reference,omitempty"`
+}
+
+// PayLoungeOrder handles POST /api/v1/lounge-orders/:id/pay
+// @Summary Pay a lounge order
+// @Description Pay a lounge order using a specific payment method
+// @Tags Lounge Orders
+// @Accept json
+// @Produce json
+// @Param id path string true "Order ID"
+// @Param request body PayLoungeOrderRequest true "Payment Details"
+// @Success 200 {object} map[string]interface{} "Payment confirmed"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Order not found"
+// @Security BearerAuth
+// @Router /api/v1/lounge-orders/{id}/pay [post]
+func (h *LoungeBookingHandler) PayLoungeOrder(c *gin.Context) {
+	userCtx, exists := middleware.GetUserContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "unauthorized",
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	orderIDStr := c.Param("id")
+	orderID, err := uuid.Parse(orderIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "invalid_id",
+			Message: "Invalid order ID format",
+		})
+		return
+	}
+
+	var req PayLoungeOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "invalid_request",
+			Message: "Invalid request payload",
+		})
+		return
+	}
+
+	// 1. Get the order
+	order, err := h.bookingRepo.GetLoungeOrderByID(orderID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to fetch order",
+		})
+		return
+	}
+	if order == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "not_found",
+			Message: "Order not found",
+		})
+		return
+	}
+
+	if order.PaymentStatus == models.LoungeOrderPaymentStatusPaid {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "already_paid",
+			Message: "Order is already paid",
+		})
+		return
+	}
+
+	// Verify the passenger has ownership (the booking must belong to them)
+	booking, err := h.bookingRepo.GetLoungeBookingByID(order.LoungeBookingID)
+	if err != nil || booking == nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to fetch associated booking to verify ownership",
+		})
+		return
+	}
+
+	if booking.UserID.String() != userCtx.UserID.String() {
+		// Staff might also be paying on behalf of user, but currently limiting this to passenger
+		c.JSON(http.StatusForbidden, ErrorResponse{
+			Error:   "forbidden",
+			Message: "Not authorized to pay for this order",
+		})
+		return
+	}
+
+	// 2. Process wallet deduction if applicable
+	if req.PaymentGateway == "internal_wallet" {
+		if h.walletService != nil {
+			wallet, err := h.walletService.GetWalletData(userCtx.UserID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{
+					Error:   "wallet_error",
+					Message: "Failed to get wallet for deduction",
+				})
+				return
+			}
+			
+			balance, ok := wallet["balance"].(float64)
+			orderTotal, parseErr := strconv.ParseFloat(order.TotalAmount, 64)
+			if parseErr != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{
+					Error:   "server_error",
+					Message: "Failed to parse order amount",
+				})
+				return
+			}
+
+			if !ok || balance < orderTotal {
+				c.JSON(http.StatusBadRequest, ErrorResponse{
+					Error:   "insufficient_balance",
+					Message: "Insufficient wallet balance",
+				})
+				return
+			}
+
+			// Deduct balance
+			err = h.walletService.DeductBalance(userCtx.UserID, orderTotal, orderIDStr, "Lounge Order Payment: "+order.OrderNumber)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{
+					Error:   "deduction_failed",
+					Message: "Failed to deduct wallet balance",
+				})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error:   "server_error",
+				Message: "Wallet service not configured",
+			})
+			return
+		}
+	}
+
+	// 3. Update payment status in database
+	err = h.bookingRepo.UpdateOrderPaymentStatus(
+		orderID,
+		models.LoungeOrderPaymentStatusPaid,
+		&req.PaymentMethod,
+		req.PaymentReference,
+	)
+
+	if err != nil {
+		log.Printf("ERROR: Failed to update order payment status: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "update_failed",
+			Message: "Failed to update order payment status",
+		})
+		return
+	}
+
+	// Also automatically update order status to preparing if it was pending
+	if order.Status == models.LoungeOrderStatusPending {
+		h.bookingRepo.UpdateOrderStatus(orderID, models.LoungeOrderStatusPreparing)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Order payment successful",
+		"order_id": orderID,
+		"status":   "paid",
 	})
 }
