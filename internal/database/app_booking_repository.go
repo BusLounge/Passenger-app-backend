@@ -396,6 +396,8 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 			st.departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
+			NULL::uuid as master_booking_id,
+			bb.scheduled_trip_id, bb.boarding_stop_id,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -432,6 +434,8 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
+			NULL::uuid as master_booking_id,
+			bb.scheduled_trip_id, bb.boarding_stop_id,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -482,6 +486,8 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
+			NULL::uuid as master_booking_id,
+			bb.scheduled_trip_id, bb.boarding_stop_id,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -526,6 +532,8 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 			) as departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
+			NULL::uuid as master_booking_id,
+			bb.scheduled_trip_id, bb.boarding_stop_id,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
@@ -565,6 +573,8 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 			st.departure_datetime, 
 			bb.number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
+			NULL::uuid as master_booking_id,
+			bb.scheduled_trip_id, bb.boarding_stop_id,
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b

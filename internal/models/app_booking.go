@@ -378,6 +378,14 @@ type BookingListItem struct {
 	SearchFromLounge *string `json:"search_from_lounge,omitempty" db:"search_from_lounge"`
 	SearchToLounge   *string `json:"search_to_lounge,omitempty" db:"search_to_lounge"`
 
+	// Grouping -- links a lounge-only BookingListItem back to its master booking
+	// so the Flutter app can merge them into a single card.
+	MasterBookingID *string `json:"master_booking_id,omitempty" db:"master_booking_id"`
+
+	// Scheduling
+	ScheduledTripID *string `json:"scheduled_trip_id,omitempty" db:"scheduled_trip_id"`
+	BoardingStopID  *string `json:"boarding_stop_id,omitempty" db:"boarding_stop_id"`
+
 	// Transport
 	HasTransport    bool    `json:"has_transport" db:"has_transport"`
 	TransportStatus *string `json:"transport_status,omitempty" db:"transport_status"`
