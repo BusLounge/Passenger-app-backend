@@ -1897,7 +1897,6 @@ func (h *LoungeBookingHandler) PayLoungeOrder(c *gin.Context) {
 				return
 			}
 			
-			balance, ok := wallet["balance"].(float64)
 			orderTotal, parseErr := strconv.ParseFloat(order.TotalAmount, 64)
 			if parseErr != nil {
 				c.JSON(http.StatusInternalServerError, ErrorResponse{
@@ -1907,7 +1906,22 @@ func (h *LoungeBookingHandler) PayLoungeOrder(c *gin.Context) {
 				return
 			}
 
-			if !ok || balance < orderTotal {
+			var balance float64
+			var foundBalance bool
+			if wMap, ok := wallet["wallet"].(map[string]interface{}); ok {
+				if b, ok := wMap["balance"].(float64); ok {
+					balance = b
+					foundBalance = true
+				}
+			}
+			if !foundBalance {
+				if b, ok := wallet["balance"].(float64); ok {
+					balance = b
+					foundBalance = true
+				}
+			}
+
+			if foundBalance && balance < orderTotal {
 				c.JSON(http.StatusBadRequest, ErrorResponse{
 					Error:   "insufficient_balance",
 					Message: "Insufficient wallet balance",
@@ -1918,9 +1932,16 @@ func (h *LoungeBookingHandler) PayLoungeOrder(c *gin.Context) {
 			// Deduct balance
 			err = h.walletService.DeductBalance(userCtx.UserID, orderTotal, orderIDStr, "Lounge Order Payment: "+order.OrderNumber)
 			if err != nil {
+				if strings.Contains(err.Error(), "insufficient") {
+					c.JSON(http.StatusBadRequest, ErrorResponse{
+						Error:   "insufficient_balance",
+						Message: "Insufficient wallet balance",
+					})
+					return
+				}
 				c.JSON(http.StatusInternalServerError, ErrorResponse{
 					Error:   "deduction_failed",
-					Message: "Failed to deduct wallet balance",
+					Message: "Failed to deduct wallet balance: " + err.Error(),
 				})
 				return
 			}
