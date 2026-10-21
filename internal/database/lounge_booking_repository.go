@@ -852,6 +852,7 @@ func (r *LoungeBookingRepository) CreateLoungeOrder(order *models.LoungeOrder, i
 
 	order.ID = uuid.New()
 	order.OrderNumber = models.GenerateLoungeOrderNumber()
+	order.OrderReference = order.OrderNumber
 	order.Status = models.LoungeOrderStatusPending
 	order.PaymentStatus = models.LoungeOrderPaymentStatusPending
 	order.CreatedAt = time.Now()
@@ -859,12 +860,12 @@ func (r *LoungeBookingRepository) CreateLoungeOrder(order *models.LoungeOrder, i
 
 	orderQuery := `
 		INSERT INTO lounge_orders (
-			id, lounge_booking_id, lounge_id, order_number, subtotal, 
-			discount_amount, total_amount, status, payment_status, notes, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			id, lounge_booking_id, lounge_id, user_id, order_reference, order_type, subtotal, 
+			discount_amount, total_amount, order_status, payment_status, special_instructions, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, 'in_lounge', $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 	_, err = tx.Exec(orderQuery,
-		order.ID, order.LoungeBookingID, order.LoungeID, order.OrderNumber,
+		order.ID, order.LoungeBookingID, order.LoungeID, order.UserID, order.OrderNumber,
 		order.Subtotal, order.DiscountAmount, order.TotalAmount,
 		order.Status, order.PaymentStatus, order.Notes,
 		order.CreatedAt, order.UpdatedAt,
@@ -874,17 +875,22 @@ func (r *LoungeBookingRepository) CreateLoungeOrder(order *models.LoungeOrder, i
 	}
 
 	itemQuery := `
-		INSERT INTO lounge_order_items (id, order_id, product_id, product_name, quantity, unit_price, total_price, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO lounge_order_items (id, order_id, product_id, product_name, product_type, quantity, unit_price, total_price, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 	for i := range items {
 		items[i].ID = uuid.New()
 		items[i].OrderID = order.ID
 		items[i].CreatedAt = time.Now()
 
+		prodType := items[i].ProductType
+		if prodType == "" {
+			prodType = "product"
+		}
+
 		_, err = tx.Exec(itemQuery,
 			items[i].ID, items[i].OrderID, items[i].ProductID,
-			items[i].ProductName, items[i].Quantity, items[i].UnitPrice,
+			items[i].ProductName, prodType, items[i].Quantity, items[i].UnitPrice,
 			items[i].TotalPrice, items[i].CreatedAt,
 		)
 		if err != nil {
@@ -904,9 +910,9 @@ func (r *LoungeBookingRepository) CreateLoungeOrder(order *models.LoungeOrder, i
 func (r *LoungeBookingRepository) GetOrdersByBookingID(bookingID uuid.UUID) ([]models.LoungeOrder, error) {
 	var orders []models.LoungeOrder
 	query := `
-		SELECT id, lounge_booking_id, lounge_id, order_number, subtotal, 
-		       discount_amount, total_amount, status, payment_status, 
-		       payment_method, notes, prepared_by_staff, served_by_staff, 
+		SELECT id, lounge_booking_id, lounge_id, user_id, order_reference as order_number, order_reference, subtotal, 
+		       discount_amount, total_amount, order_status as status, payment_status, 
+		       payment_method, special_instructions as notes, prepared_by_user_id as prepared_by_staff, served_by_user_id as served_by_staff, 
 		       created_at, updated_at
 		FROM lounge_orders
 		WHERE lounge_booking_id = $1
@@ -921,16 +927,16 @@ func (r *LoungeBookingRepository) GetOrdersByBookingID(bookingID uuid.UUID) ([]m
 	for i := range orders {
 		var items []models.LoungeOrderItem
 		itemQuery := `
-			SELECT id, order_id, product_id, product_name, quantity, unit_price, total_price, created_at
+			SELECT id, order_id, product_id, product_name, product_type, quantity, unit_price, total_price, created_at
 			FROM lounge_order_items
 			WHERE order_id = $1
 			ORDER BY created_at ASC
 		`
-		err = r.db.Select(&items, itemQuery, orders[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		orders[i].Items = items
+	err = r.db.Select(&items, itemQuery, orders[i].ID)
+	if err != nil {
+		return nil, err
+	}
+	orders[i].Items = items
 	}
 
 	return orders, nil
@@ -940,9 +946,9 @@ func (r *LoungeBookingRepository) GetOrdersByBookingID(bookingID uuid.UUID) ([]m
 func (r *LoungeBookingRepository) GetLoungeOrderByID(orderID uuid.UUID) (*models.LoungeOrder, error) {
 	var order models.LoungeOrder
 	query := `
-		SELECT id, lounge_booking_id, lounge_id, order_number, subtotal, 
-		       discount_amount, total_amount, status, payment_status, 
-		       payment_method, notes, prepared_by_staff, served_by_staff, 
+		SELECT id, lounge_booking_id, lounge_id, user_id, order_reference as order_number, order_reference, subtotal, 
+		       discount_amount, total_amount, order_status as status, payment_status, 
+		       payment_method, special_instructions as notes, prepared_by_user_id as prepared_by_staff, served_by_user_id as served_by_staff, 
 		       created_at, updated_at
 		FROM lounge_orders
 		WHERE id = $1
@@ -958,7 +964,7 @@ func (r *LoungeBookingRepository) GetLoungeOrderByID(orderID uuid.UUID) (*models
 	// Get items for the order
 	var items []models.LoungeOrderItem
 	itemQuery := `
-		SELECT id, order_id, product_id, product_name, quantity, unit_price, total_price, created_at
+		SELECT id, order_id, product_id, product_name, product_type, quantity, unit_price, total_price, created_at
 		FROM lounge_order_items
 		WHERE order_id = $1
 		ORDER BY created_at ASC
@@ -974,7 +980,7 @@ func (r *LoungeBookingRepository) GetLoungeOrderByID(orderID uuid.UUID) (*models
 
 // UpdateOrderStatus updates order status
 func (r *LoungeBookingRepository) UpdateOrderStatus(orderID uuid.UUID, status models.LoungeOrderStatus) error {
-	query := `UPDATE lounge_orders SET status = $2, updated_at = NOW() WHERE id = $1`
+	query := `UPDATE lounge_orders SET order_status = $2, updated_at = NOW() WHERE id = $1`
 	_, err := r.db.Exec(query, orderID, status)
 	return err
 }
@@ -983,7 +989,7 @@ func (r *LoungeBookingRepository) UpdateOrderStatus(orderID uuid.UUID, status mo
 func (r *LoungeBookingRepository) UpdateOrderPaymentStatus(orderID uuid.UUID, paymentStatus models.LoungeOrderPaymentStatus, paymentMethod *string, notes *string) error {
 	query := `
 		UPDATE lounge_orders 
-		SET payment_status = $2, payment_method = $3, notes = COALESCE($4, notes), updated_at = NOW()
+		SET payment_status = $2, payment_method = $3, payment_reference = COALESCE($4, payment_reference), paid_at = NOW(), updated_at = NOW()
 		WHERE id = $1
 	`
 	_, err := r.db.Exec(query, orderID, paymentStatus, paymentMethod, notes)

@@ -1571,11 +1571,13 @@ func (h *LoungeBookingHandler) CreateLoungeOrder(c *gin.Context) {
 		return
 	}
 
-	// Verify booking is checked_in or confirmed (for pre-orders)
-	if booking.Status != models.LoungeBookingStatusCheckedIn && booking.Status != models.LoungeBookingStatusConfirmed {
+	// Verify booking is in an orderable status (pending, confirmed, or checked_in)
+	if booking.Status != models.LoungeBookingStatusCheckedIn &&
+		booking.Status != models.LoungeBookingStatusConfirmed &&
+		booking.Status != models.LoungeBookingStatusPending {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "booking_not_active",
-			Message: "Orders can only be placed for confirmed or checked-in bookings",
+			Message: "Orders can only be placed for pending, confirmed, or checked-in bookings",
 		})
 		return
 	}

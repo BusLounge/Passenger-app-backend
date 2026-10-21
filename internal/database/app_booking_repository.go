@@ -390,11 +390,24 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 			COALESCE(b.payment_status, 'pending') as payment_status, 
 			COALESCE(b.booking_status, 'pending') as booking_status,
 			COALESCE(b.passenger_name, '') as passenger_name, b.created_at,
-			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(
+				lf.lounge_name, 
+				b.search_from_lounge,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as search_from_lounge, 
 			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
-			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
-			bb.number_of_seats,
+			COALESCE(
+				bor.custom_route_name,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as route_name, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
+			COALESCE(
+				bb.number_of_seats,
+				(SELECT lb.number_of_guests FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
 			NULL::uuid as master_booking_id,
 			bb.scheduled_trip_id, bb.boarding_stop_id,
@@ -429,14 +442,24 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 			COALESCE(b.payment_status, 'pending') as payment_status, 
 			COALESCE(b.booking_status, 'pending') as booking_status,
 			COALESCE(b.passenger_name, '') as passenger_name, b.created_at,
-			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(
+				lf.lounge_name, 
+				b.search_from_lounge,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as search_from_lounge, 
 			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
-			bor.custom_route_name as route_name, 
+			COALESCE(
+				bor.custom_route_name,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as route_name, 
 			COALESCE(
 				st.departure_datetime,
 				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
 			) as departure_datetime, 
-			bb.number_of_seats,
+			COALESCE(
+				bb.number_of_seats,
+				(SELECT lb.number_of_guests FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
 			NULL::uuid as master_booking_id,
 			bb.scheduled_trip_id, bb.boarding_stop_id,
@@ -481,14 +504,24 @@ func (r *AppBookingRepository) GetCompletedBookingsByUserID(userID string, limit
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(
+				lf.lounge_name, 
+				b.search_from_lounge,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as search_from_lounge, 
 			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
-			bor.custom_route_name as route_name, 
+			COALESCE(
+				bor.custom_route_name,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as route_name, 
 			COALESCE(
 				st.departure_datetime,
 				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
 			) as departure_datetime, 
-			bb.number_of_seats,
+			COALESCE(
+				bb.number_of_seats,
+				(SELECT lb.number_of_guests FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
 			NULL::uuid as master_booking_id,
 			bb.scheduled_trip_id, bb.boarding_stop_id,
@@ -527,14 +560,24 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(
+				lf.lounge_name, 
+				b.search_from_lounge,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as search_from_lounge, 
 			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
-			bor.custom_route_name as route_name, 
+			COALESCE(
+				bor.custom_route_name,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as route_name, 
 			COALESCE(
 				st.departure_datetime,
 				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
 			) as departure_datetime, 
-			bb.number_of_seats,
+			COALESCE(
+				bb.number_of_seats,
+				(SELECT lb.number_of_guests FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
 			NULL::uuid as master_booking_id,
 			bb.scheduled_trip_id, bb.boarding_stop_id,
@@ -575,11 +618,24 @@ func (r *AppBookingRepository) GetNotCompletedBookingsByUserID(userID string, li
 			b.id, b.booking_reference, b.booking_type,
 			b.total_amount, b.payment_status, b.booking_status,
 			b.passenger_name, b.created_at,
-			COALESCE(lf.lounge_name, b.search_from_lounge) as search_from_lounge, 
+			COALESCE(
+				lf.lounge_name, 
+				b.search_from_lounge,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as search_from_lounge, 
 			COALESCE(lt.lounge_name, b.search_to_lounge) as search_to_lounge,
-			bor.custom_route_name as route_name, 
-			st.departure_datetime, 
-			bb.number_of_seats,
+			COALESCE(
+				bor.custom_route_name,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as route_name, 
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
+			) as departure_datetime, 
+			COALESCE(
+				bb.number_of_seats,
+				(SELECT lb.number_of_guests FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1)
+			) as number_of_seats,
 			bb.status as bus_status, b.qr_code_data,
 			NULL::uuid as master_booking_id,
 			bb.scheduled_trip_id, bb.boarding_stop_id,

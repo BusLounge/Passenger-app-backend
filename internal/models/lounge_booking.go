@@ -383,7 +383,9 @@ type LoungeOrder struct {
 	ID              uuid.UUID                `db:"id" json:"id"`
 	LoungeBookingID uuid.UUID                `db:"lounge_booking_id" json:"lounge_booking_id"`
 	LoungeID        uuid.UUID                `db:"lounge_id" json:"lounge_id"`
+	UserID          *uuid.UUID               `db:"user_id" json:"user_id,omitempty"`
 	OrderNumber     string                   `db:"order_number" json:"order_number"`
+	OrderReference  string                   `db:"order_reference" json:"order_reference,omitempty"`
 	Subtotal        string                   `db:"subtotal" json:"subtotal"` // DECIMAL
 	DiscountAmount  string                   `db:"discount_amount" json:"discount_amount"`
 	TotalAmount     string                   `db:"total_amount" json:"total_amount"`
@@ -424,6 +426,7 @@ type LoungeOrderItem struct {
 	OrderID     uuid.UUID `db:"order_id" json:"order_id"`
 	ProductID   uuid.UUID `db:"product_id" json:"product_id"`
 	ProductName string    `db:"product_name" json:"product_name"` // Snapshot
+	ProductType string    `db:"product_type" json:"product_type"`
 	Quantity    int       `db:"quantity" json:"quantity"`
 	UnitPrice   string    `db:"unit_price" json:"unit_price"`   // DECIMAL - snapshot
 	TotalPrice  string    `db:"total_price" json:"total_price"` // DECIMAL
