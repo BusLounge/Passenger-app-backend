@@ -912,7 +912,7 @@ func (r *LoungeBookingRepository) GetOrdersByBookingID(bookingID uuid.UUID) ([]m
 	query := `
 		SELECT id, lounge_booking_id, lounge_id, user_id, order_reference as order_number, order_reference, subtotal, 
 		       discount_amount, total_amount, order_status as status, payment_status, 
-		       payment_method, special_instructions as notes, prepared_by_user_id as prepared_by_staff, served_by_user_id as served_by_staff, 
+		       payment_method, special_instructions as notes, NULL::uuid as prepared_by_staff, served_by_user_id as served_by_staff, 
 		       created_at, updated_at
 		FROM lounge_orders
 		WHERE lounge_booking_id = $1
@@ -948,7 +948,7 @@ func (r *LoungeBookingRepository) GetLoungeOrderByID(orderID uuid.UUID) (*models
 	query := `
 		SELECT id, lounge_booking_id, lounge_id, user_id, order_reference as order_number, order_reference, subtotal, 
 		       discount_amount, total_amount, order_status as status, payment_status, 
-		       payment_method, special_instructions as notes, prepared_by_user_id as prepared_by_staff, served_by_user_id as served_by_staff, 
+		       payment_method, special_instructions as notes, NULL::uuid as prepared_by_staff, served_by_user_id as served_by_staff, 
 		       created_at, updated_at
 		FROM lounge_orders
 		WHERE id = $1
