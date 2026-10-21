@@ -401,7 +401,11 @@ func (r *AppBookingRepository) GetBookingsByUserID(userID string, limit, offset 
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
+		LEFT JOIN (
+			SELECT DISTINCT ON (booking_id) *
+			FROM bus_bookings
+			ORDER BY booking_id, created_at ASC
+		) bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
 		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text
@@ -537,7 +541,11 @@ func (r *AppBookingRepository) GetExpiredOrCancelledBookingsByUserID(userID stri
 			EXISTS(SELECT 1 FROM transport_bookings tb WHERE tb.booking_id = b.id) as has_transport,
 			(SELECT tb.status FROM transport_bookings tb WHERE tb.booking_id = b.id ORDER BY tb.created_at DESC LIMIT 1) as transport_status
 		FROM bookings b
-		LEFT JOIN bus_bookings bb ON bb.booking_id = b.id
+		LEFT JOIN (
+			SELECT DISTINCT ON (booking_id) *
+			FROM bus_bookings
+			ORDER BY booking_id, created_at ASC
+		) bb ON bb.booking_id = b.id
 		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
 		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
 		LEFT JOIN lounges lf ON b.search_from_lounge = lf.id::text

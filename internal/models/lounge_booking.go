@@ -470,7 +470,8 @@ func (r *LoungeProductReview) MarshalJSON() ([]byte, error) {
 // CreateLoungeBookingRequest is the request to create a lounge booking
 type CreateLoungeBookingRequest struct {
 	LoungeID     string  `json:"lounge_id" binding:"required"`
-	BusBookingID *string `json:"bus_booking_id,omitempty"`        // For pre_trip/post_trip
+	BusBookingID    *string `json:"bus_booking_id,omitempty"`        // For pre_trip/post_trip
+	MasterBookingID *string `json:"master_booking_id,omitempty"`     // Parent master booking ID
 	BookingType  string  `json:"booking_type" binding:"required"` // pre_trip, post_trip, standalone
 
 	// Timing

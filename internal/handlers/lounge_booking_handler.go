@@ -835,11 +835,21 @@ func (h *LoungeBookingHandler) CreateLoungeBooking(c *gin.Context) {
 		}
 	}
 
-	// Handle bus booking ID for pre_trip/post_trip
+	// Handle master booking ID and bus booking ID for pre_trip/post_trip
+	if req.MasterBookingID != nil {
+		masterID, err := uuid.Parse(*req.MasterBookingID)
+		if err == nil {
+			booking.MasterBookingID = &masterID
+		}
+	}
 	if req.BusBookingID != nil {
 		busBookingID, err := uuid.Parse(*req.BusBookingID)
 		if err == nil {
 			booking.BusBookingID = &busBookingID
+			if booking.MasterBookingID == nil {
+				// If master_booking_id was not provided, busBookingID from frontend often carries the master booking ID
+				booking.MasterBookingID = &busBookingID
+			}
 		}
 	}
 
