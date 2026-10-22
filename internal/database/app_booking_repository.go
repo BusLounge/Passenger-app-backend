@@ -1469,3 +1469,58 @@ func (r *AppBookingRepository) MarkNoShow(seatID, staffUserID string) error {
 		seatID)
 	return err
 }
+
+// GetCancelledBookingsWithRefundsByUserID retrieves cancelled/partial_cancel bookings with their refund records
+func (r *AppBookingRepository) GetCancelledBookingsWithRefundsByUserID(userID string, limit, offset int) ([]models.CancelledBookingWithRefund, error) {
+	query := `
+		SELECT 
+			b.id,
+			b.booking_reference,
+			b.booking_type,
+			CAST(b.total_amount AS FLOAT) as total_amount,
+			b.booking_status,
+			b.cancelled_at,
+			b.cancellation_reason,
+			b.created_at,
+			COALESCE(
+				bor.custom_route_name,
+				(SELECT lb.lounge_name FROM lounge_bookings lb WHERE lb.master_booking_id = b.id ORDER BY lb.created_at ASC LIMIT 1),
+				'Trip Booking'
+			) as route_name,
+			COALESCE(
+				st.departure_datetime,
+				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id),
+				b.created_at
+			) as departure_datetime,
+			r.id as refund_id,
+			CAST(COALESCE(r.amount, 0) AS FLOAT) as refund_amount,
+			COALESCE(r.status, 'none') as refund_status,
+			r.refund_reference,
+			r.reason as refund_reason,
+			r.created_at as refund_created_at,
+			r.refunded_at
+		FROM bookings b
+		LEFT JOIN (
+			SELECT DISTINCT ON (booking_id) *
+			FROM bus_bookings
+			ORDER BY booking_id, created_at ASC
+		) bb ON bb.booking_id = b.id
+		LEFT JOIN scheduled_trips st ON st.id = bb.scheduled_trip_id
+		LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
+		LEFT JOIN (
+			SELECT DISTINCT ON (booking_id) *
+			FROM refunds
+			ORDER BY booking_id, created_at DESC
+		) r ON r.booking_id = b.id
+		WHERE b.user_id = $1
+		  AND (b.booking_status IN ('cancelled', 'partial_cancel') OR r.id IS NOT NULL)
+		ORDER BY COALESCE(b.cancelled_at, b.updated_at, b.created_at) DESC
+		LIMIT $2 OFFSET $3`
+
+	var list []models.CancelledBookingWithRefund
+	err := r.db.Select(&list, query, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}

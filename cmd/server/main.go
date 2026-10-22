@@ -931,6 +931,8 @@ func main() {
 			appBookings.GET("/completed", appBookingHandler.GetCompletedBookings)
 			logger.Info("  ✅ GET /api/v1/bookings/cancelled - Get cancelled/expired bookings")
 			appBookings.GET("/cancelled", appBookingHandler.GetExpiredOrCancelledBookings)
+			logger.Info("  ? GET /api/v1/bookings/cancelled-refunds - Get cancelled bookings with refund updates")
+			appBookings.GET("/cancelled-refunds", appBookingHandler.GetCancelledBookingsWithRefunds)
 			logger.Info("  ✅ GET /api/v1/bookings/:id - Get booking by ID")
 			appBookings.GET("/:id", appBookingHandler.GetBookingByID)
 			logger.Info("  ✅ GET /api/v1/bookings/reference/:reference - Get booking by reference")

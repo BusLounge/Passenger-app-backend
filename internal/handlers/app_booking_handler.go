@@ -730,3 +730,36 @@ func (h *AppBookingHandler) GetBookingQR(c *gin.Context) {
 		"seats":              len(booking.BusBooking.Seats),
 	})
 }
+
+// GetCancelledBookingsWithRefunds retrieves cancelled bookings with refund tracking details
+func (h *AppBookingHandler) GetCancelledBookingsWithRefunds(c *gin.Context) {
+	userCtx, exists := middleware.GetUserContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	bookings, err := h.bookingRepo.GetCancelledBookingsWithRefundsByUserID(userCtx.UserID.String(), 100, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cancelled bookings with refunds", "details": err.Error()})
+		return
+	}
+
+	var totalRefunded, totalPending float64
+	for _, b := range bookings {
+		if b.RefundStatus == "completed" {
+			totalRefunded += b.RefundAmount
+		} else if b.RefundStatus == "pending" {
+			totalPending += b.RefundAmount
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"cancelled_bookings": bookings,
+		"summary": models.CancelledBookingsSummary{
+			TotalCancelled:     len(bookings),
+			TotalRefunded:      totalRefunded,
+			TotalPendingRefund: totalPending,
+		},
+	})
+}
