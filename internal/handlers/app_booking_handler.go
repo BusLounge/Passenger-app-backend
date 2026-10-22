@@ -603,13 +603,20 @@ func (h *AppBookingHandler) CancelBooking(c *gin.Context) {
 		reason = nil
 	}
 
+	requestRefund := true
+	if req.RequestRefund != nil {
+		requestRefund = *req.RequestRefund
+	}
+
 	refundDest := req.RefundDestination
 	if refundDest == "" {
 		refundDest = "wallet"
 	}
 
 	refundAmount := req.RefundAmount
-	if refundAmount <= 0 {
+	if !requestRefund {
+		refundAmount = 0
+	} else if refundAmount <= 0 {
 		refundAmount = booking.TotalAmount * 0.90
 	}
 
@@ -620,6 +627,7 @@ func (h *AppBookingHandler) CancelBooking(c *gin.Context) {
 		req.CancelLegs,
 		refundAmount,
 		refundDest,
+		requestRefund,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel booking", "details": err.Error()})

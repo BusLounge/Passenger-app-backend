@@ -687,7 +687,7 @@ func (r *AppBookingRepository) UpdatePaymentStatus(
 }
 
 // CancelBooking cancels a booking and releases seats with refund processing
-func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *string, cancelLegs []string, refundAmount float64, refundDestination string) (*models.Refund, error) {
+func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *string, cancelLegs []string, refundAmount float64, refundDestination string, requestRefund bool) (*models.Refund, error) {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return nil, err
@@ -891,43 +891,47 @@ func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *s
 		}
 	}
 
-	// Insert into refunds table for Admin Panel request tracking
+	var refund *models.Refund
 	refRef := fmt.Sprintf("REF-%s", strings.ToUpper(uuid.New().String()[:8]))
-	refundStatus := "pending" // Always 'pending' so Admin panel gets the refund request
 
-	destPrefix := "[Wallet]"
-	if refundDestination == "original" {
-		destPrefix = "[Original Payment Method]"
-	}
-	formattedReason := fmt.Sprintf("%s %s", destPrefix, strings.TrimSpace(reasonStr))
+	// Only insert into refunds table if user requested a refund
+	if requestRefund && refundAmount > 0 {
+		refundStatus := "pending" // Always 'pending' so Admin panel gets the refund request
 
-	refund := &models.Refund{
-		Amount:          refundAmount,
-		Reason:          formattedReason,
-		Status:          refundStatus,
-		RefundReference: &refRef,
-		RefundedAt:      nil,
-	}
+		destPrefix := "[Wallet]"
+		if refundDestination == "original" {
+			destPrefix = "[Original Payment Method]"
+		}
+		formattedReason := fmt.Sprintf("%s %s", destPrefix, strings.TrimSpace(reasonStr))
 
-	actualBookingUUID, parseErr := uuid.Parse(actualBookingID)
-	if parseErr == nil {
-		refund.BookingID = actualBookingUUID
-		refund.LegID = singleLegUUID
+		refund = &models.Refund{
+			Amount:          refundAmount,
+			Reason:          formattedReason,
+			Status:          refundStatus,
+			RefundReference: &refRef,
+			RefundedAt:      nil,
+		}
 
-		err = tx.QueryRowx(`
-			INSERT INTO refunds (
-				id, booking_id, leg_id, transaction_id, amount, reason, status, refund_reference, created_at, refunded_at
-			) VALUES (
-				gen_random_uuid(), $1, $2, NULL, $3, $4, $5, $6, NOW(), NULL
-			) RETURNING id, created_at
-		`, refund.BookingID, refund.LegID, refund.Amount, refund.Reason, refund.Status, refund.RefundReference).StructScan(refund)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create refund record: %w", err)
+		actualBookingUUID, parseErr := uuid.Parse(actualBookingID)
+		if parseErr == nil {
+			refund.BookingID = actualBookingUUID
+			refund.LegID = singleLegUUID
+
+			err = tx.QueryRowx(`
+				INSERT INTO refunds (
+					id, booking_id, leg_id, transaction_id, amount, reason, status, refund_reference, created_at, refunded_at
+				) VALUES (
+					gen_random_uuid(), $1, $2, NULL, $3, $4, $5, $6, NOW(), NULL
+				) RETURNING id, created_at
+			`, refund.BookingID, refund.LegID, refund.Amount, refund.Reason, refund.Status, refund.RefundReference).StructScan(refund)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create refund record: %w", err)
+			}
 		}
 	}
 
 	// If refund to wallet, credit the user's wallet
-	if refundDestination == "wallet" && refundAmount > 0 {
+	if requestRefund && refundDestination == "wallet" && refundAmount > 0 {
 		userUUID, uErr := uuid.Parse(userID)
 		if uErr == nil {
 			// Ensure wallet exists

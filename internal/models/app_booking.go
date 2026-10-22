@@ -348,6 +348,7 @@ type CancelAppBookingRequest struct {
 	CancelLegs        []string `json:"cancel_legs,omitempty"`
 	RefundDestination string   `json:"refund_destination,omitempty"`
 	RefundAmount      float64  `json:"refund_amount,omitempty"`
+	RequestRefund     *bool    `json:"request_refund,omitempty"`
 }
 
 // BookingResponse is the response after creating a booking
