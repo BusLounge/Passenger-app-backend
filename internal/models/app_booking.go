@@ -344,7 +344,10 @@ type ConfirmAppPaymentRequest struct {
 
 // CancelAppBookingRequest cancels a booking
 type CancelAppBookingRequest struct {
-	Reason string `json:"reason"`
+	Reason            string   `json:"reason"`
+	CancelLegs        []string `json:"cancel_legs,omitempty"`
+	RefundDestination string   `json:"refund_destination,omitempty"`
+	RefundAmount      float64  `json:"refund_amount,omitempty"`
 }
 
 // BookingResponse is the response after creating a booking
@@ -398,7 +401,8 @@ type BookingListItem struct {
 // CanBeCancelled checks if booking can be cancelled
 func (b *MasterBooking) CanBeCancelled() bool {
 	return b.BookingStatus == MasterBookingPending ||
-		b.BookingStatus == MasterBookingConfirmed
+		b.BookingStatus == MasterBookingConfirmed ||
+		b.BookingStatus == MasterBookingPartialCancel
 }
 
 // IsPaid checks if booking is paid

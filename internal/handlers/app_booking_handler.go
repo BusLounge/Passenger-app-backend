@@ -597,25 +597,42 @@ func (h *AppBookingHandler) CancelBooking(c *gin.Context) {
 		return
 	}
 
-	// Cancel booking
+	// Cancel booking with legs and refund
 	reason := &req.Reason
 	if req.Reason == "" {
 		reason = nil
 	}
-	err = h.bookingRepo.CancelBooking(bookingID, userCtx.UserID.String(), reason)
+
+	refundDest := req.RefundDestination
+	if refundDest == "" {
+		refundDest = "wallet"
+	}
+
+	refundAmount := req.RefundAmount
+	if refundAmount <= 0 {
+		refundAmount = booking.TotalAmount * 0.90
+	}
+
+	refund, err := h.bookingRepo.CancelBooking(
+		bookingID,
+		userCtx.UserID.String(),
+		reason,
+		req.CancelLegs,
+		refundAmount,
+		refundDest,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel booking", "details": err.Error()})
 		return
 	}
 
-	// Check if refund is needed
-	refundNeeded := booking.IsPaid()
-
 	c.JSON(http.StatusOK, gin.H{
-		"message":       "Booking cancelled successfully",
-		"booking_id":    bookingID,
-		"refund_needed": refundNeeded,
-		"refund_amount": booking.TotalAmount,
+		"message":            "Cancellation processed successfully",
+		"booking_id":         bookingID,
+		"refund_needed":      booking.IsPaid(),
+		"refund_amount":      refundAmount,
+		"refund_destination": refundDest,
+		"refund":             refund,
 	})
 }
 

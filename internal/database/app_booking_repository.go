@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/smarttransit/sms-auth-backend/internal/models"
 )
@@ -685,71 +686,293 @@ func (r *AppBookingRepository) UpdatePaymentStatus(
 	return err
 }
 
-// CancelBooking cancels a booking and releases seats
-func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *string) error {
+// CancelBooking cancels a booking and releases seats with refund processing
+func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *string, cancelLegs []string, refundAmount float64, refundDestination string) (*models.Refund, error) {
 	tx, err := r.db.Beginx()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 
-	// 1. Update master booking
-	_, err = tx.Exec(`
-		UPDATE bookings 
-		SET booking_status = 'cancelled',
-		    cancelled_at = NOW(),
-		    cancelled_by_user_id = $1,
-		    cancellation_reason = $2,
-		    updated_at = NOW()
-		WHERE id = $3`,
-		userID, reason, bookingID)
-	if err != nil {
-		return fmt.Errorf("failed to cancel booking: %w", err)
+	// 1. Resolve master booking ID if lounge_booking id was passed
+	actualBookingID := bookingID
+	var exists bool
+	_ = tx.Get(&exists, "SELECT EXISTS(SELECT 1 FROM bookings WHERE id = $1)", bookingID)
+	if !exists {
+		var mbID *string
+		err = tx.Get(&mbID, "SELECT master_booking_id FROM lounge_bookings WHERE id = $1", bookingID)
+		if err == nil && mbID != nil && *mbID != "" {
+			actualBookingID = *mbID
+		}
 	}
 
-	// 2. Update bus booking status
-	_, err = tx.Exec(`
-		UPDATE bus_bookings 
-		SET status = 'cancelled',
-		    cancelled_at = NOW(),
-		    cancellation_reason = $1,
-		    updated_at = NOW()
-		WHERE booking_id = $2`,
-		reason, bookingID)
-	if err != nil {
-		return fmt.Errorf("failed to cancel bus booking: %w", err)
+	// Fetch booking details for reference
+	var bRef string
+	var bTotal float64
+	var bStatus string
+	_ = tx.QueryRowx("SELECT booking_reference, total_amount, booking_status FROM bookings WHERE id = $1", actualBookingID).Scan(&bRef, &bTotal, &bStatus)
+
+	var singleLegUUID *uuid.UUID
+	reasonStr := ""
+	if reason != nil {
+		reasonStr = *reason
 	}
 
-	// 3. Update seat statuses
-	_, err = tx.Exec(`
-		UPDATE bus_booking_seats 
-		SET status = 'cancelled',
-		    cancelled_at = NOW(),
-		    updated_at = NOW()
-		WHERE bus_booking_id IN (SELECT id FROM bus_bookings WHERE booking_id = $1)`,
-		bookingID)
-	if err != nil {
-		return fmt.Errorf("failed to cancel seat bookings: %w", err)
+	if len(cancelLegs) == 0 {
+		// Full cancellation of all components
+		_, err = tx.Exec(`
+			UPDATE bookings 
+			SET booking_status = 'cancelled',
+			    cancelled_at = NOW(),
+			    cancelled_by_user_id = $1,
+			    cancellation_reason = $2,
+			    refund_amount = $3,
+			    refunded_at = CASE WHEN $4 = 'wallet' THEN NOW() ELSE NULL END,
+			    updated_at = NOW()
+			WHERE id = $5`,
+			userID, reason, refundAmount, refundDestination, actualBookingID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to cancel booking: %w", err)
+		}
+
+		// Cancel bus bookings
+		_, err = tx.Exec(`
+			UPDATE bus_bookings 
+			SET status = 'cancelled',
+			    cancelled_at = NOW(),
+			    cancellation_reason = $1,
+			    updated_at = NOW()
+			WHERE booking_id = $2`,
+			reason, actualBookingID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to cancel bus booking: %w", err)
+		}
+
+		// Cancel seats
+		_, err = tx.Exec(`
+			UPDATE bus_booking_seats 
+			SET status = 'cancelled',
+			    cancelled_at = NOW(),
+			    updated_at = NOW()
+			WHERE bus_booking_id IN (SELECT id FROM bus_bookings WHERE booking_id = $1)`,
+			actualBookingID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to cancel seat bookings: %w", err)
+		}
+
+		// Release trip seats
+		_, err = tx.Exec(`
+			UPDATE trip_seats 
+			SET status = 'available',
+			    booking_type = NULL,
+			    bus_booking_seat_id = NULL,
+			    updated_at = NOW()
+			WHERE bus_booking_seat_id IN (
+				SELECT bbs.id FROM bus_booking_seats bbs
+				JOIN bus_bookings bb ON bb.id = bbs.bus_booking_id
+				WHERE bb.booking_id = $1
+			)`,
+			actualBookingID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to release trip seats: %w", err)
+		}
+
+		// Cancel lounge bookings
+		_, err = tx.Exec(`
+			UPDATE lounge_bookings 
+			SET status = 'cancelled',
+			    cancelled_at = NOW(),
+			    cancellation_reason = $1,
+			    updated_at = NOW()
+			WHERE master_booking_id = $2 OR id = $2`,
+			reason, actualBookingID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to cancel lounge bookings: %w", err)
+		}
+
+		// Cancel transport bookings
+		_, _ = tx.Exec(`
+			UPDATE transport_bookings 
+			SET status = 'cancelled',
+			    cancellation_reason = $1,
+			    updated_at = NOW()
+			WHERE booking_id = $2`,
+			reason, actualBookingID)
+	} else {
+		// Partial cancellation of selected legs
+		for _, legID := range cancelLegs {
+			legUUID, errUUID := uuid.Parse(legID)
+			if errUUID == nil && len(cancelLegs) == 1 {
+				singleLegUUID = &legUUID
+			}
+
+			// 1. Check if leg is bus booking
+			res, errBus := tx.Exec(`
+				UPDATE bus_bookings 
+				SET status = 'cancelled',
+				    cancelled_at = NOW(),
+				    cancellation_reason = $1,
+				    updated_at = NOW()
+				WHERE (id::text = $2 OR booking_id::text = $2) AND status != 'cancelled'`,
+				reason, legID)
+			if errBus == nil {
+				if rows, _ := res.RowsAffected(); rows > 0 {
+					// Release seats
+					_, _ = tx.Exec(`
+						UPDATE bus_booking_seats 
+						SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
+						WHERE bus_booking_id::text = $1 OR bus_booking_id IN (SELECT id FROM bus_bookings WHERE booking_id::text = $1)`,
+						legID)
+					_, _ = tx.Exec(`
+						UPDATE trip_seats 
+						SET status = 'available', booking_type = NULL, bus_booking_seat_id = NULL, updated_at = NOW()
+						WHERE bus_booking_seat_id IN (
+							SELECT id FROM bus_booking_seats 
+							WHERE bus_booking_id::text = $1 OR bus_booking_id IN (SELECT id FROM bus_bookings WHERE booking_id::text = $1)
+						)`,
+						legID)
+				}
+			}
+
+			// 2. Check if leg is lounge booking
+			_, _ = tx.Exec(`
+				UPDATE lounge_bookings 
+				SET status = 'cancelled',
+				    cancelled_at = NOW(),
+				    cancellation_reason = $1,
+				    updated_at = NOW()
+				WHERE id::text = $2 AND status != 'cancelled'`,
+				reason, legID)
+
+			// 3. Check if leg is transport booking
+			_, _ = tx.Exec(`
+				UPDATE transport_bookings 
+				SET status = 'cancelled',
+				    cancellation_reason = $1,
+				    updated_at = NOW()
+				WHERE id::text = $2 AND status != 'cancelled'`,
+				reason, legID)
+		}
+
+		// Check remaining active legs
+		var remainingLegs int
+		err = tx.Get(&remainingLegs, `
+			SELECT 
+			  (SELECT COUNT(*) FROM bus_bookings WHERE booking_id = $1 AND status != 'cancelled') +
+			  (SELECT COUNT(*) FROM lounge_bookings WHERE (master_booking_id = $1 OR id = $1) AND status != 'cancelled') +
+			  (SELECT COUNT(*) FROM transport_bookings WHERE booking_id = $1 AND status != 'cancelled')
+		`, actualBookingID)
+		if err != nil {
+			remainingLegs = 0
+		}
+
+		if remainingLegs == 0 {
+			_, err = tx.Exec(`
+				UPDATE bookings 
+				SET booking_status = 'cancelled',
+				    cancelled_at = NOW(),
+				    cancelled_by_user_id = $1,
+				    cancellation_reason = $2,
+				    refund_amount = COALESCE(refund_amount, 0) + $3,
+				    refunded_at = CASE WHEN $4 = 'wallet' THEN NOW() ELSE refunded_at END,
+				    updated_at = NOW()
+				WHERE id = $5`,
+				userID, reason, refundAmount, refundDestination, actualBookingID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to cancel master booking: %w", err)
+			}
+		} else {
+			_, err = tx.Exec(`
+				UPDATE bookings 
+				SET booking_status = 'partial_cancel',
+				    cancellation_reason = $1,
+				    refund_amount = COALESCE(refund_amount, 0) + $2,
+				    refunded_at = CASE WHEN $3 = 'wallet' THEN NOW() ELSE refunded_at END,
+				    updated_at = NOW()
+				WHERE id = $4`,
+				reason, refundAmount, refundDestination, actualBookingID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update partial cancel on master booking: %w", err)
+			}
+		}
 	}
 
-	// 4. Release trip_seats (the trigger should handle this, but let's be explicit)
-	_, err = tx.Exec(`
-		UPDATE trip_seats 
-		SET status = 'available',
-		    booking_type = NULL,
-		    bus_booking_seat_id = NULL,
-		    updated_at = NOW()
-		WHERE bus_booking_seat_id IN (
-			SELECT bbs.id FROM bus_booking_seats bbs
-			JOIN bus_bookings bb ON bb.id = bbs.bus_booking_id
-			WHERE bb.booking_id = $1
-		)`,
-		bookingID)
-	if err != nil {
-		return fmt.Errorf("failed to release trip seats: %w", err)
+	// Insert into refunds table
+	refRef := fmt.Sprintf("REF-%s", strings.ToUpper(uuid.New().String()[:8]))
+	refundStatus := "pending"
+	var refundedAt *time.Time
+	if refundDestination == "wallet" {
+		refundStatus = "completed"
+		now := time.Now()
+		refundedAt = &now
 	}
 
-	return tx.Commit()
+	refund := &models.Refund{
+		Amount:          refundAmount,
+		Reason:          reasonStr,
+		Status:          refundStatus,
+		RefundReference: &refRef,
+		RefundedAt:      refundedAt,
+	}
+
+	actualBookingUUID, parseErr := uuid.Parse(actualBookingID)
+	if parseErr == nil {
+		refund.BookingID = actualBookingUUID
+		refund.LegID = singleLegUUID
+
+		err = tx.QueryRowx(`
+			INSERT INTO refunds (
+				id, booking_id, leg_id, transaction_id, amount, reason, status, refund_reference, created_at, refunded_at
+			) VALUES (
+				gen_random_uuid(), $1, $2, NULL, $3, $4, $5, $6, NOW(), $7
+			) RETURNING id, created_at
+		`, refund.BookingID, refund.LegID, refund.Amount, refund.Reason, refund.Status, refund.RefundReference, refund.RefundedAt).StructScan(refund)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create refund record: %w", err)
+		}
+	}
+
+	// If refund to wallet, credit the user's wallet
+	if refundDestination == "wallet" && refundAmount > 0 {
+		userUUID, uErr := uuid.Parse(userID)
+		if uErr == nil {
+			// Ensure wallet exists
+			_, _ = tx.Exec(`
+				INSERT INTO wallets_passenger (user_id, balance, status)
+				VALUES ($1, 0.00, 'ACTIVE')
+				ON CONFLICT (user_id) DO NOTHING
+			`, userUUID)
+
+			// Credit balance
+			_, err = tx.Exec(`
+				UPDATE wallets_passenger 
+				SET balance = balance + $1, updated_at = NOW() 
+				WHERE user_id = $2
+			`, refundAmount, userUUID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to credit wallet balance: %w", err)
+			}
+
+			// Insert wallet transaction
+			desc := fmt.Sprintf("Refund for booking #%s", bRef)
+			_, err = tx.Exec(`
+				INSERT INTO wallet_transactions 
+				(wallet_id, amount, balance_before, balance_after, transaction_type, reference_type, gateway_reference, description, status)
+				SELECT id, $1, balance - $1, balance, 'credit', 'refund', $2, $3, 'completed'
+				FROM wallets_passenger
+				WHERE user_id = $4
+			`, refundAmount, refRef, desc, userUUID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to insert wallet transaction: %w", err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return refund, nil
 }
 
 // CancelTransportBooking cancels a specific transport booking
