@@ -116,3 +116,29 @@ func (r *TransportBookingRepository) GenerateTransportBookingReference() (string
 	id := time.Now().UnixNano()
 	return fmt.Sprintf("TRP-%X", id)[0:10], nil // Simplified
 }
+
+// ConfirmTransportPayment confirms a transport booking by ID
+func (r *TransportBookingRepository) ConfirmTransportPayment(transportID string, paymentRef string) error {
+	query := `
+		UPDATE transport_bookings
+		SET status = 'confirmed',
+		    payment_status = 'paid',
+		    payment_reference = COALESCE(NULLIF($1, ''), payment_reference),
+		    updated_at = NOW()
+		WHERE id = $2`
+	_, err := r.db.Exec(query, paymentRef, transportID)
+	return err
+}
+
+// ConfirmTransportPaymentByRef confirms a transport booking by booking_reference (invoice ID)
+func (r *TransportBookingRepository) ConfirmTransportPaymentByRef(reference string, paymentRef string) error {
+	query := `
+		UPDATE transport_bookings
+		SET status = 'confirmed',
+		    payment_status = 'paid',
+		    payment_reference = COALESCE(NULLIF($1, ''), payment_reference),
+		    updated_at = NOW()
+		WHERE booking_reference = $2`
+	_, err := r.db.Exec(query, paymentRef, reference)
+	return err
+}

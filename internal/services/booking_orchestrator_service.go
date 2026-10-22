@@ -2378,8 +2378,8 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 		loungeTransportType = &req.LoungeTransportType
 	}
 
-	// Generate Invoice ID
-	invoiceID := fmt.Sprintf("TRP-%s-%d", bookingID[0:8], time.Now().Unix())
+	// Generate Invoice ID (max 20 characters for PAYable: TRP- + 12 chars = 16 chars)
+	invoiceID := fmt.Sprintf("TRP-%s", bookingID[0:12])
 
 	transportBooking := &models.TransportBooking{
 		ID:                       bookingID,
@@ -2498,4 +2498,14 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 		"transport_id": bookingID,
 		"status":       "pending",
 	}, nil
+}
+
+// ConfirmTransportPayment confirms a transport booking payment by transport ID
+func (s *BookingOrchestratorService) ConfirmTransportPayment(transportID string, paymentRef string) error {
+	return s.transportBookingRepo.ConfirmTransportPayment(transportID, paymentRef)
+}
+
+// ConfirmTransportPaymentByRef confirms a transport booking payment by booking_reference
+func (s *BookingOrchestratorService) ConfirmTransportPaymentByRef(reference string, paymentRef string) error {
+	return s.transportBookingRepo.ConfirmTransportPaymentByRef(reference, paymentRef)
 }

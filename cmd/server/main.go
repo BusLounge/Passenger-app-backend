@@ -682,6 +682,7 @@ func main() {
 				// BYPASS ROUTES FOR TRANSPORT BOOKINGS
 				logger.Info("  ✅ POST /api/v1/lounges/near-stop/transport/lounge/:id (protected)")
 				loungesProtected.POST("/near-stop/transport/lounge/:id", bookingOrchestratorHandler.AddTransportToLoungeBooking)
+				loungesProtected.POST("/near-stop/transport/:id/confirm-payment", bookingOrchestratorHandler.ConfirmTransportPayment)
 				logger.Info("  ✅ POST /api/v1/lounges/near-stop/transport/master/:id (protected)")
 				loungesProtected.POST("/near-stop/transport/master/:id", bookingOrchestratorHandler.AddTransportToMasterBooking)
 			}
@@ -943,6 +944,7 @@ func main() {
 			appBookings.POST("/:id/cancel", appBookingHandler.CancelBooking)
 			logger.Info("  ✅ POST /api/v1/bookings/:id/transport - Add transport to master booking")
 			appBookings.POST("/:id/transport", bookingOrchestratorHandler.AddTransportToMasterBooking)
+			appBookings.POST("/transport/:id/confirm-payment", bookingOrchestratorHandler.ConfirmTransportPayment)
 			logger.Info("  ✅ GET /api/v1/bookings/:id/qr - Get booking QR code")
 			appBookings.GET("/:id/qr", appBookingHandler.GetBookingQR)
 		}

@@ -592,6 +592,19 @@ func (h *BookingOrchestratorHandler) PaymentWebhook(c *gin.Context) {
 		"correlation_id": correlationID,
 	}).Info("PAYable status check response")
 
+	// If invoiceID starts with TRP-, confirm transport booking directly
+	if statusResp != nil && strings.HasPrefix(statusResp.GetInvoiceID(), "TRP-") {
+		paymentStatus := strings.ToUpper(statusResp.GetPaymentStatus())
+		if paymentStatus == "SUCCESS" {
+			err := h.orchestratorService.ConfirmTransportPaymentByRef(statusResp.GetInvoiceID(), statusResp.GetTransactionID())
+			if err != nil {
+				h.logger.WithError(err).Error("Failed to confirm transport booking from PAYable Webhook")
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "webhook acknowledged", "invoice_id": statusResp.GetInvoiceID()})
+		return
+	}
+
 	// FIRST: Look up intent by payment UID to check if already confirmed
 	intent, err := h.orchestratorService.GetIntentByPaymentUID(uid)
 
@@ -948,6 +961,18 @@ func (h *BookingOrchestratorHandler) PayHereWebhook(c *gin.Context) {
 		return
 	}
 
+	// If OrderID starts with TRP-, confirm transport booking directly
+	if strings.HasPrefix(payload.OrderID, "TRP-") {
+		err := h.orchestratorService.ConfirmTransportPaymentByRef(payload.OrderID, payload.PaymentID)
+		if err != nil {
+			h.logger.WithError(err).Error("Failed to confirm transport booking from PayHere Webhook")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to confirm transport booking"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Transport Booking Confirmed"})
+		return
+	}
+
 	// 3. Route to Wallet TopUp or Booking Confirmation
 	// Wallet top-up orders use "WAL-" prefix.
 	// custom_1 carries a descriptive tag ("wallet_topup") and custom_2 carries the User UUID.
@@ -1081,3 +1106,28 @@ func (h *BookingOrchestratorHandler) addTransportToBooking(c *gin.Context, isMas
 	c.JSON(http.StatusOK, resp)
 }
 
+// ConfirmTransportPayment handles POST /api/v1/transport/:id/confirm-payment
+func (h *BookingOrchestratorHandler) ConfirmTransportPayment(c *gin.Context) {
+	transportID := c.Param("id")
+	if transportID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "transport id is required"})
+		return
+	}
+
+	var req struct {
+		PaymentReference string `json:"payment_reference"`
+		Gateway          string `json:"gateway"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	err := h.orchestratorService.ConfirmTransportPayment(transportID, req.PaymentReference)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Transport payment confirmed successfully",
+		"status":  "confirmed",
+	})
+}
