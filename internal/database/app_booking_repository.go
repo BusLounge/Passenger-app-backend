@@ -726,11 +726,9 @@ func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *s
 			    cancelled_at = NOW(),
 			    cancelled_by_user_id = $1,
 			    cancellation_reason = $2,
-			    refund_amount = $3,
-			    refunded_at = CASE WHEN $4 = 'wallet' THEN NOW() ELSE NULL END,
 			    updated_at = NOW()
-			WHERE id = $5`,
-			userID, reason, refundAmount, refundDestination, actualBookingID)
+			WHERE id = $3`,
+			userID, reason, actualBookingID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to cancel booking: %w", err)
 		}
@@ -873,11 +871,9 @@ func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *s
 				    cancelled_at = NOW(),
 				    cancelled_by_user_id = $1,
 				    cancellation_reason = $2,
-				    refund_amount = COALESCE(refund_amount, 0) + $3,
-				    refunded_at = CASE WHEN $4 = 'wallet' THEN NOW() ELSE refunded_at END,
 				    updated_at = NOW()
-				WHERE id = $5`,
-				userID, reason, refundAmount, refundDestination, actualBookingID)
+				WHERE id = $3`,
+				userID, reason, actualBookingID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to cancel master booking: %w", err)
 			}
@@ -886,33 +882,31 @@ func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *s
 				UPDATE bookings 
 				SET booking_status = 'partial_cancel',
 				    cancellation_reason = $1,
-				    refund_amount = COALESCE(refund_amount, 0) + $2,
-				    refunded_at = CASE WHEN $3 = 'wallet' THEN NOW() ELSE refunded_at END,
 				    updated_at = NOW()
-				WHERE id = $4`,
-				reason, refundAmount, refundDestination, actualBookingID)
+				WHERE id = $2`,
+				reason, actualBookingID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update partial cancel on master booking: %w", err)
 			}
 		}
 	}
 
-	// Insert into refunds table
+	// Insert into refunds table for Admin Panel request tracking
 	refRef := fmt.Sprintf("REF-%s", strings.ToUpper(uuid.New().String()[:8]))
-	refundStatus := "pending"
-	var refundedAt *time.Time
-	if refundDestination == "wallet" {
-		refundStatus = "completed"
-		now := time.Now()
-		refundedAt = &now
+	refundStatus := "pending" // Always 'pending' so Admin panel gets the refund request
+
+	destPrefix := "[Wallet]"
+	if refundDestination == "original" {
+		destPrefix = "[Original Payment Method]"
 	}
+	formattedReason := fmt.Sprintf("%s %s", destPrefix, strings.TrimSpace(reasonStr))
 
 	refund := &models.Refund{
 		Amount:          refundAmount,
-		Reason:          reasonStr,
+		Reason:          formattedReason,
 		Status:          refundStatus,
 		RefundReference: &refRef,
-		RefundedAt:      refundedAt,
+		RefundedAt:      nil,
 	}
 
 	actualBookingUUID, parseErr := uuid.Parse(actualBookingID)
@@ -924,9 +918,9 @@ func (r *AppBookingRepository) CancelBooking(bookingID, userID string, reason *s
 			INSERT INTO refunds (
 				id, booking_id, leg_id, transaction_id, amount, reason, status, refund_reference, created_at, refunded_at
 			) VALUES (
-				gen_random_uuid(), $1, $2, NULL, $3, $4, $5, $6, NOW(), $7
+				gen_random_uuid(), $1, $2, NULL, $3, $4, $5, $6, NOW(), NULL
 			) RETURNING id, created_at
-		`, refund.BookingID, refund.LegID, refund.Amount, refund.Reason, refund.Status, refund.RefundReference, refund.RefundedAt).StructScan(refund)
+		`, refund.BookingID, refund.LegID, refund.Amount, refund.Reason, refund.Status, refund.RefundReference).StructScan(refund)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create refund record: %w", err)
 		}
