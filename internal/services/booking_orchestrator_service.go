@@ -2364,6 +2364,15 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 	cancellationReason := ""
 	refundStatus := ""
 
+	if masterBookingID == nil && loungeBookingID != nil {
+		if lUUID, parseErr := uuid.Parse(*loungeBookingID); parseErr == nil {
+			if lb, err := s.loungeBookingRepo.GetLoungeBookingByID(lUUID); err == nil && lb != nil && lb.MasterBookingID != nil {
+				mID := lb.MasterBookingID.String()
+				masterBookingID = &mID
+			}
+		}
+	}
+
 	var loungeTransportType *string
 	if req.LoungeTransportType != "" {
 		loungeTransportType = &req.LoungeTransportType
@@ -2402,8 +2411,22 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 			return nil, fmt.Errorf("failed to fetch wallet: %v", err)
 		}
 
-		balance, ok := wallet["balance"].(float64)
-		if !ok || balance < req.TransportPrice {
+		var balance float64
+		var foundBalance bool
+		if wMap, ok := wallet["wallet"].(map[string]interface{}); ok {
+			if b, ok := wMap["balance"].(float64); ok {
+				balance = b
+				foundBalance = true
+			}
+		}
+		if !foundBalance {
+			if b, ok := wallet["balance"].(float64); ok {
+				balance = b
+				foundBalance = true
+			}
+		}
+
+		if foundBalance && balance < req.TransportPrice {
 			return nil, fmt.Errorf("insufficient wallet balance")
 		}
 

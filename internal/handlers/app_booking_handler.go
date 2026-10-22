@@ -489,8 +489,22 @@ func (h *AppBookingHandler) ConfirmPayment(c *gin.Context) {
 				return
 			}
 			
-			balance, ok := wallet["balance"].(float64)
-			if !ok || balance < booking.TotalAmount {
+			var balance float64
+			var foundBalance bool
+			if wMap, ok := wallet["wallet"].(map[string]interface{}); ok {
+				if b, ok := wMap["balance"].(float64); ok {
+					balance = b
+					foundBalance = true
+				}
+			}
+			if !foundBalance {
+				if b, ok := wallet["balance"].(float64); ok {
+					balance = b
+					foundBalance = true
+				}
+			}
+
+			if foundBalance && balance < booking.TotalAmount {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient wallet balance"})
 				return
 			}

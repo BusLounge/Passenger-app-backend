@@ -324,7 +324,7 @@ func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterB
 		FROM transport_bookings tb
 		LEFT JOIN lounges l ON tb.lounge_id = l.id
 		LEFT JOIN lounge_transport_locations ptl ON tb.pickup_location_id = ptl.id
-		WHERE tb.booking_id = $1`
+		WHERE tb.booking_id = $1 OR tb.lounge_id IN (SELECT id FROM lounge_bookings WHERE master_booking_id = $1)`
 	err = r.db.Select(&transportBookings, queryTransport, bookingID)
 	if err == nil && len(transportBookings) > 0 {
 		booking.TransportBookings = transportBookings

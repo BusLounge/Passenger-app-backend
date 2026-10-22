@@ -55,6 +55,7 @@ func (s *WalletService) GetWalletData(userID uuid.UUID) (map[string]interface{},
 	}
 
 	data := map[string]interface{}{
+		"balance": wallet.Balance,
 		"wallet": map[string]interface{}{
 			"id":      wallet.ID,
 			"balance": wallet.Balance,
