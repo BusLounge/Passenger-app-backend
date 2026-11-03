@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -557,17 +558,87 @@ func (r *LoungeBookingRepository) GetLoungeBookingByID(bookingID uuid.UUID) (*mo
 }
 
 // GetLoungeBookingByReference returns a booking by reference
+// GetLoungeBookingByReference returns a booking by reference, master reference, or raw QR JSON
 func (r *LoungeBookingRepository) GetLoungeBookingByReference(reference string) (*models.LoungeBooking, error) {
+	cleanRef := strings.TrimSpace(reference)
+	if strings.HasPrefix(cleanRef, "{") {
+		var qrPayload struct {
+			BookingReference string `json:"booking_reference"`
+			BookingID        string `json:"booking_id"`
+			MasterRef        string `json:"master_reference"`
+			MasterID         string `json:"master_booking_id"`
+		}
+		if err := json.Unmarshal([]byte(cleanRef), &qrPayload); err == nil {
+			if qrPayload.BookingReference != "" {
+				cleanRef = qrPayload.BookingReference
+			} else if qrPayload.MasterRef != "" {
+				cleanRef = qrPayload.MasterRef
+			} else if qrPayload.BookingID != "" {
+				cleanRef = qrPayload.BookingID
+			} else if qrPayload.MasterID != "" {
+				cleanRef = qrPayload.MasterID
+			}
+		}
+	}
+
 	var bookingID uuid.UUID
 	query := `SELECT id FROM lounge_bookings WHERE booking_reference = $1`
-	err := r.db.Get(&bookingID, query, reference)
+	err := r.db.Get(&bookingID, query, cleanRef)
 	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
+		// Fallback 1: Check if cleanRef is a master booking reference
+		masterQuery := `
+			SELECT lb.id 
+			FROM lounge_bookings lb
+			JOIN bookings b ON lb.master_booking_id = b.id
+			WHERE b.booking_reference = $1 AND lb.status != 'cancelled'
+			ORDER BY lb.scheduled_arrival ASC
+			LIMIT 1`
+		mErr := r.db.Get(&bookingID, masterQuery, cleanRef)
+		if mErr != nil {
+			// Fallback 2: Check if cleanRef is master booking ID directly
+			mIDQuery := `
+				SELECT id FROM lounge_bookings 
+				WHERE master_booking_id::text = $1 AND status != 'cancelled'
+				ORDER BY scheduled_arrival ASC
+				LIMIT 1`
+			if idErr := r.db.Get(&bookingID, mIDQuery, cleanRef); idErr != nil {
+				// Fallback 3: Check if cleanRef is a lounge booking UUID
+				if uid, parseErr := uuid.Parse(cleanRef); parseErr == nil {
+					bookingID = uid
+				} else {
+					return nil, nil
+				}
+			}
+		}
+	} else if err != nil {
 		return nil, err
 	}
-	return r.GetLoungeBookingByID(bookingID)
+
+	booking, err := r.GetLoungeBookingByID(bookingID)
+	if err != nil || booking == nil {
+		return booking, err
+	}
+
+	// Fetch sibling lounge bookings under the same master booking
+	if booking.MasterBookingID != nil {
+		siblings, sErr := r.GetLoungeBookingsByBookingID(booking.MasterBookingID.String())
+		if sErr == nil && len(siblings) > 1 {
+			var related []models.LoungeBooking
+			for _, sib := range siblings {
+				if sib.ID != booking.ID {
+					// Get full details including guests and pre-orders
+					if fullSib, fErr := r.GetLoungeBookingByID(sib.ID); fErr == nil && fullSib != nil {
+						related = append(related, *fullSib)
+					} else {
+						related = append(related, sib)
+					}
+				}
+			}
+			booking.RelatedBookings = related
+		}
+	}
+
+	return booking, nil
 }
 
 // GetLoungeBookingsByBookingID returns all lounge bookings associated with a master booking ID

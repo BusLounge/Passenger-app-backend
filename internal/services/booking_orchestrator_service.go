@@ -2373,9 +2373,24 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 		}
 	}
 
+	var targetLoungeID *string
+	if loungeBookingID != nil && *loungeBookingID != "" {
+		targetLoungeID = loungeBookingID
+	} else if req.LoungeBookingID != "" {
+		targetLoungeID = &req.LoungeBookingID
+	} else if req.LoungeID != "" {
+		targetLoungeID = &req.LoungeID
+	}
+
 	var loungeTransportType *string
 	if req.LoungeTransportType != "" {
 		loungeTransportType = &req.LoungeTransportType
+	} else if req.IsPreTrip {
+		pre := "pre_trip"
+		loungeTransportType = &pre
+	} else {
+		post := "post_trip"
+		loungeTransportType = &post
 	}
 
 	// Generate Invoice ID (max 20 characters for PAYable: TRP- + 12 chars = 16 chars)
@@ -2385,7 +2400,7 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 		ID:                       bookingID,
 		BookingID:                masterBookingID,
 		UserID:                   userID,
-		LoungeID:                 loungeBookingID,
+		LoungeID:                 targetLoungeID,
 		PickupLocationID:         &req.PickupLocationID,
 		VehicleType:              req.VehicleType,
 		VehicleQuantity:          req.VehicleQuantity,

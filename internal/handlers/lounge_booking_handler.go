@@ -1147,7 +1147,33 @@ func (h *LoungeBookingHandler) GetLoungeBookingByReference(c *gin.Context) {
 	if booking.UserID != userCtx.UserID {
 		owner, _ := h.loungeOwnerRepo.GetLoungeOwnerByUserID(userCtx.UserID)
 		lounge, _ := h.loungeRepo.GetLoungeByID(booking.LoungeID)
-		if owner == nil || lounge == nil || lounge.LoungeOwnerID != owner.ID {
+		isAuthorized := owner != nil && lounge != nil && lounge.LoungeOwnerID == owner.ID
+
+		// If primary lounge booking is not for this owner, check if any related booking is
+		if !isAuthorized && owner != nil && len(booking.RelatedBookings) > 0 {
+			for i, rel := range booking.RelatedBookings {
+				relLounge, _ := h.loungeRepo.GetLoungeByID(rel.LoungeID)
+				if relLounge != nil && relLounge.LoungeOwnerID == owner.ID {
+					orig := *booking
+					orig.RelatedBookings = nil
+					if newPrimary, pErr := h.bookingRepo.GetLoungeBookingByID(rel.ID); pErr == nil && newPrimary != nil {
+						booking = newPrimary
+						var newRelated []models.LoungeBooking
+						newRelated = append(newRelated, orig)
+						for j, other := range orig.RelatedBookings {
+							if j != i && other.ID != booking.ID {
+								newRelated = append(newRelated, other)
+							}
+						}
+						booking.RelatedBookings = newRelated
+						isAuthorized = true
+						break
+					}
+				}
+			}
+		}
+
+		if !isAuthorized {
 			c.JSON(http.StatusForbidden, ErrorResponse{
 				Error:   "forbidden",
 				Message: "Not authorized to view this booking",

@@ -69,4 +69,6 @@ type AddTransportRequest struct {
 	IsPreTrip                bool    `json:"is_pre_trip"`
 	PaymentMethod            string  `json:"payment_method"`
 	LoungeTransportType      string  `json:"lounge_transport_type"`
+	LoungeID                 string  `json:"lounge_id"`
+	LoungeBookingID          string  `json:"lounge_booking_id"`
 }
