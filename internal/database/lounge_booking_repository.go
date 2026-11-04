@@ -554,6 +554,45 @@ func (r *LoungeBookingRepository) GetLoungeBookingByID(bookingID uuid.UUID) (*mo
 	}
 	booking.PreOrders = preOrders
 
+	// Get in-lounge orders
+	orders, oErr := r.GetOrdersByBookingID(bookingID)
+	if oErr == nil && len(orders) > 0 {
+		booking.Orders = orders
+	}
+
+	// Get transport bookings
+	masterIDStr := ""
+	if booking.MasterBookingID != nil {
+		masterIDStr = booking.MasterBookingID.String()
+	}
+	legType := string(booking.BookingType)
+	var transports []models.TransportBooking
+	transportQuery := `
+		SELECT 
+			tb.id, tb.booking_id, tb.user_id, tb.lounge_id, tb.pickup_location_id,
+			tb.vehicle_type, tb.vehicle_quantity, tb.transport_price, tb.transport_date, tb.transport_time,
+			tb.estimated_duration_minutes, tb.booking_reference, tb.status, tb.payment_status,
+			tb.payment_reference, tb.driver_id, tb.driver_assigned_at, tb.cancellation_reason,
+			tb.refund_status, tb.refund_amount, tb.created_at, tb.updated_at,
+			tb.lounge_transport_type,
+			COALESCE(l.lounge_name, '') as lounge_name,
+			COALESCE(ptl.location, '') as pickup_location_name
+		FROM transport_bookings tb
+		LEFT JOIN lounges l ON tb.lounge_id = l.id
+		LEFT JOIN lounge_transport_locations ptl ON tb.pickup_location_id = ptl.id
+		WHERE (
+			tb.lounge_id = $1 OR tb.lounge_id = $2
+			OR ($3 != '' AND tb.booking_id = $3 AND (
+				($4 = 'pre_trip' AND (tb.lounge_transport_type = 'pre_trip' OR tb.lounge_transport_type IS NULL)) OR
+				($4 = 'post_trip' AND tb.lounge_transport_type = 'post_trip')
+			))
+		) AND tb.status != 'cancelled'
+		ORDER BY tb.created_at ASC
+	`
+	if tErr := r.db.Select(&transports, transportQuery, bookingID.String(), booking.LoungeID.String(), masterIDStr, legType); tErr == nil {
+		booking.Transport = transports
+	}
+
 	return &booking, nil
 }
 

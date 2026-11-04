@@ -280,6 +280,8 @@ type LoungeBooking struct {
 	Guests    []LoungeBookingGuest    `db:"-" json:"guests,omitempty"`
 	PreOrders []LoungeBookingPreOrder `db:"-" json:"pre_orders,omitempty"`
 	RelatedBookings []LoungeBooking         `db:"-" json:"related_bookings,omitempty"`
+	Orders          []LoungeOrder           `db:"-" json:"orders,omitempty"`
+	Transport       []TransportBooking      `db:"-" json:"transport,omitempty"`
 }
 
 // MarshalJSON customizes JSON encoding for LoungeBooking
@@ -578,6 +580,8 @@ type LoungeBookingResponse struct {
 	Guests    []LoungeBookingGuest    `json:"guests,omitempty"`
 	PreOrders []LoungeBookingPreOrder `json:"pre_orders,omitempty"`
 	RelatedBookings []LoungeBooking         `db:"-" json:"related_bookings,omitempty"`
+	Orders          []LoungeOrder           `db:"-" json:"orders,omitempty"`
+	Transport       []TransportBooking      `db:"-" json:"transport,omitempty"`
 }
 
 // LoungeBookingListItem is a summary for listing bookings
