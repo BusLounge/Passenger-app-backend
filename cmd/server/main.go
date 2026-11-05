@@ -366,6 +366,10 @@ func main() {
 	// Initialize Wallet handler here (needs payhereService, declared above)
 	walletHandler := handlers.NewWalletHandler(walletService, payhereService, logger)
 
+	// Initialize Saved Cards handler
+	savedCardRepo := database.NewSavedCardRepository(sqlxDB.DB)
+	savedCardHandler := handlers.NewSavedCardHandler(savedCardRepo, logger)
+
 	bookingOrchestratorService := services.NewBookingOrchestratorService(
 		bookingIntentRepo,
 		tripSeatRepo,
@@ -1022,6 +1026,18 @@ func main() {
 			wallet.GET("/topup/hash", walletHandler.GetTopUpHash)
 		}
 		logger.Info("💰 Wallet routes registered successfully")
+
+		// ============================================================================
+		// PAYMENT METHODS / SAVED CARDS ROUTES
+		// ============================================================================
+		paymentMethods := v1.Group("/payment-methods")
+		paymentMethods.Use(middleware.AuthMiddleware(jwtService))
+		{
+			paymentMethods.GET("/cards", savedCardHandler.GetSavedCards)
+			paymentMethods.POST("/cards", savedCardHandler.SaveCard)
+			paymentMethods.DELETE("/cards/:id", savedCardHandler.DeleteSavedCard)
+			paymentMethods.PUT("/cards/:id/default", savedCardHandler.SetDefaultCard)
+		}
 
 		// ============================================================================
 		// STAFF BOOKING ROUTES (Conductor/Driver operations)
