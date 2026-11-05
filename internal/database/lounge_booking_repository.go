@@ -580,13 +580,20 @@ func (r *LoungeBookingRepository) GetLoungeBookingByID(bookingID uuid.UUID) (*mo
 		FROM transport_bookings tb
 		LEFT JOIN lounges l ON tb.lounge_id = l.id
 		LEFT JOIN lounge_transport_locations ptl ON tb.pickup_location_id = ptl.id
-		WHERE (
-			tb.lounge_id = $1 OR tb.lounge_id = $2
-			OR ($3 != '' AND tb.booking_id = $3 AND (
-				($4 = 'pre_trip' AND (tb.lounge_transport_type = 'pre_trip' OR tb.lounge_transport_type IS NULL)) OR
-				($4 = 'post_trip' AND tb.lounge_transport_type = 'post_trip')
-			))
-		) AND tb.status != 'cancelled'
+		WHERE tb.status != 'cancelled'
+		  AND (
+			-- Direct match by specific lounge booking record ID
+			tb.lounge_id = $1
+			-- OR match by physical lounge ID or master booking ID, strictly respecting the leg type
+			OR (
+				(tb.lounge_id = $2 OR ($3 != '' AND tb.booking_id = $3))
+				AND (
+					(tb.lounge_transport_type IS NOT NULL AND tb.lounge_transport_type = $4)
+					OR
+					(tb.lounge_transport_type IS NULL AND ($4 = 'pre_trip' OR $4 = 'standalone' OR $4 = ''))
+				)
+			)
+		  )
 		ORDER BY tb.created_at ASC
 	`
 	if tErr := r.db.Select(&transports, transportQuery, bookingID.String(), booking.LoungeID.String(), masterIDStr, legType); tErr == nil {
