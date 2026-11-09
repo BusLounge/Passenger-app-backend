@@ -151,6 +151,7 @@ const (
 	LoungeProductTypeProduct LoungeProductType = "product" // Food, beverages, snacks, etc.
 	LoungeProductTypeService LoungeProductType = "service" // Storage, WiFi, shower, etc.
 	LoungeProductTypeCombo   LoungeProductType = "combo"   // Bundled offerings (matches DB ENUM)
+	LoungeProductTypePackage LoungeProductType = "package" // Special packages (lounge_special_packages table)
 )
 
 // LoungeProduct represents a product/service offered by a lounge
@@ -189,6 +190,12 @@ type LoungeProduct struct {
 
 	// Populated via JOINs
 	CategoryName string `db:"-" json:"category_name,omitempty"`
+
+	// Special Package fields (from lounge_special_packages table)
+	PaxCount        *int            `db:"-" json:"pax_count,omitempty"`
+	MealInclusions  map[string]bool `db:"-" json:"meal_inclusions,omitempty"`
+	TransportMode   *string         `db:"-" json:"transport_mode,omitempty"`
+	TransportStatus *string         `db:"-" json:"transport_status,omitempty"`
 }
 
 // ============================================================================

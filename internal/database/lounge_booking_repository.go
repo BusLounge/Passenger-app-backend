@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -127,9 +128,9 @@ func (r *LoungeBookingRepository) GetProductsByLoungeID(loungeID uuid.UUID) ([]m
 			p.created_at, p.updated_at,
 			c.name as category_name
 		FROM lounge_products p
-		JOIN lounge_marketplace_categories c ON p.category_id = c.id
+		LEFT JOIN lounge_marketplace_categories c ON p.category_id = c.id
 		WHERE p.lounge_id = $1 AND p.is_active = TRUE AND p.is_available = TRUE
-		ORDER BY c.display_order, p.display_order ASC
+		ORDER BY COALESCE(c.display_order, 999), p.display_order ASC
 	`
 
 	rows, err := r.db.Queryx(query, loungeID)
@@ -140,7 +141,7 @@ func (r *LoungeBookingRepository) GetProductsByLoungeID(loungeID uuid.UUID) ([]m
 
 	for rows.Next() {
 		var p models.LoungeProduct
-		var categoryName string
+		var categoryName sql.NullString
 		var stockStatus, productType string
 		var tags, availableDays, allergens []string
 
@@ -203,8 +204,107 @@ func (r *LoungeBookingRepository) GetProductsByLoungeID(loungeID uuid.UUID) ([]m
 		p.Tags = tags
 		p.AvailableDays = availableDays
 		p.Allergens = allergens
-		p.CategoryName = categoryName
+		if categoryName.Valid {
+			p.CategoryName = categoryName.String
+		}
 		products = append(products, p)
+	}
+
+	// Fetch special packages for this lounge from lounge_special_packages
+	pkgQuery := `
+		SELECT 
+			id, lounge_id, package_name, description, price::text, image_url,
+			is_active, pax, transport_status, transport_mode::text,
+			"meal-status", "breakfast-status", "lunch-status", "evening-snack-status", "dinner-status",
+			created_at, updated_at
+		FROM lounge_special_packages
+		WHERE lounge_id = $1 AND is_active = TRUE
+		ORDER BY created_at DESC
+	`
+
+	pkgRows, err := r.db.Queryx(pkgQuery, loungeID)
+	if err == nil {
+		defer pkgRows.Close()
+		for pkgRows.Next() {
+			var (
+				pkgID, pkgLoungeID                                             uuid.UUID
+				pkgName, priceStr                                              string
+				desc, imgURL                                                   sql.NullString
+				isActive                                                       bool
+				pax                                                            sql.NullInt64
+				transportStatus                                                sql.NullBool
+				transportMode                                                  sql.NullString
+				mealStatus, bfStatus, lunchStatus, evSnackStatus, dinnerStatus sql.NullBool
+				createdAt, updatedAt                                           time.Time
+			)
+
+			scanErr := pkgRows.Scan(
+				&pkgID, &pkgLoungeID, &pkgName, &desc, &priceStr, &imgURL,
+				&isActive, &pax, &transportStatus, &transportMode,
+				&mealStatus, &bfStatus, &lunchStatus, &evSnackStatus, &dinnerStatus,
+				&createdAt, &updatedAt,
+			)
+			if scanErr != nil {
+				log.Printf("WARN: Failed to scan special package row: %v", scanErr)
+				continue
+			}
+
+			pkgProduct := models.LoungeProduct{
+				ID:             pkgID,
+				LoungeID:       pkgLoungeID,
+				Name:           pkgName,
+				ProductType:    models.LoungeProductTypePackage,
+				Price:          priceStr,
+				StockStatus:    models.LoungeProductStockStatusInStock,
+				IsAvailable:    isActive,
+				IsPreOrderable: true,
+				IsActive:       isActive,
+				CategoryName:   "Special Packages",
+				CreatedAt:      createdAt,
+				UpdatedAt:      updatedAt,
+			}
+			if desc.Valid {
+				pkgProduct.Description = &desc.String
+			}
+			if imgURL.Valid {
+				pkgProduct.ImageURL = &imgURL.String
+			}
+			if pax.Valid {
+				paxVal := int(pax.Int64)
+				pkgProduct.PaxCount = &paxVal
+			}
+			if transportMode.Valid && transportMode.String != "" {
+				pkgProduct.TransportMode = &transportMode.String
+			}
+			if transportStatus.Valid {
+				statusStr := "unavailable"
+				if transportStatus.Bool {
+					statusStr = "available"
+				}
+				pkgProduct.TransportStatus = &statusStr
+			}
+
+			meals := make(map[string]bool)
+			if bfStatus.Valid && bfStatus.Bool {
+				meals["breakfast"] = true
+			}
+			if lunchStatus.Valid && lunchStatus.Bool {
+				meals["lunch"] = true
+			}
+			if evSnackStatus.Valid && evSnackStatus.Bool {
+				meals["evening_snack"] = true
+			}
+			if dinnerStatus.Valid && dinnerStatus.Bool {
+				meals["dinner"] = true
+			}
+			if len(meals) > 0 {
+				pkgProduct.MealInclusions = meals
+			}
+
+			products = append(products, pkgProduct)
+		}
+	} else {
+		log.Printf("WARN: Failed to query special packages for lounge %s: %v", loungeID, err)
 	}
 
 	return products, nil
@@ -234,7 +334,8 @@ func (r *LoungeBookingRepository) GetProductByID(productID uuid.UUID) (*models.L
 	var availableFrom, availableUntil, averageRating sql.NullString
 	var serviceDurationMinutes, stockQuantity, calories sql.NullInt64
 	var tags, availableDays, allergens []string
-	var stockStatus, productType, categoryName string
+	var stockStatus, productType string
+	var categoryName sql.NullString
 
 	err := r.db.QueryRow(query, productID).Scan(
 		&p.ID, &p.LoungeID, &p.CategoryID, &p.Name, &description,
@@ -249,7 +350,7 @@ func (r *LoungeBookingRepository) GetProductByID(productID uuid.UUID) (*models.L
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return r.GetSpecialPackageByID(productID)
 	}
 	if err != nil {
 		return nil, err
@@ -296,9 +397,102 @@ func (r *LoungeBookingRepository) GetProductByID(productID uuid.UUID) (*models.L
 	p.Tags = tags
 	p.AvailableDays = availableDays
 	p.Allergens = allergens
-	p.CategoryName = categoryName
+	if categoryName.Valid {
+		p.CategoryName = categoryName.String
+	}
 
 	return &p, nil
+}
+
+// GetSpecialPackageByID returns a special package by ID mapped to a LoungeProduct
+func (r *LoungeBookingRepository) GetSpecialPackageByID(packageID uuid.UUID) (*models.LoungeProduct, error) {
+	pkgQuery := `
+		SELECT 
+			id, lounge_id, package_name, description, price::text, image_url,
+			is_active, pax, transport_status, transport_mode::text,
+			"meal-status", "breakfast-status", "lunch-status", "evening-snack-status", "dinner-status",
+			created_at, updated_at
+		FROM lounge_special_packages
+		WHERE id = $1
+	`
+	var (
+		pkgID, pkgLoungeID                                             uuid.UUID
+		pkgName, priceStr                                              string
+		desc, imgURL                                                   sql.NullString
+		isActive                                                       bool
+		pax                                                            sql.NullInt64
+		transportStatus                                                sql.NullBool
+		transportMode                                                  sql.NullString
+		mealStatus, bfStatus, lunchStatus, evSnackStatus, dinnerStatus sql.NullBool
+		createdAt, updatedAt                                           time.Time
+	)
+
+	err := r.db.QueryRow(pkgQuery, packageID).Scan(
+		&pkgID, &pkgLoungeID, &pkgName, &desc, &priceStr, &imgURL,
+		&isActive, &pax, &transportStatus, &transportMode,
+		&mealStatus, &bfStatus, &lunchStatus, &evSnackStatus, &dinnerStatus,
+		&createdAt, &updatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	pkgProduct := &models.LoungeProduct{
+		ID:             pkgID,
+		LoungeID:       pkgLoungeID,
+		Name:           pkgName,
+		ProductType:    models.LoungeProductTypePackage,
+		Price:          priceStr,
+		StockStatus:    models.LoungeProductStockStatusInStock,
+		IsAvailable:    isActive,
+		IsPreOrderable: true,
+		IsActive:       isActive,
+		CategoryName:   "Special Packages",
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
+	}
+	if desc.Valid {
+		pkgProduct.Description = &desc.String
+	}
+	if imgURL.Valid {
+		pkgProduct.ImageURL = &imgURL.String
+	}
+	if pax.Valid {
+		paxVal := int(pax.Int64)
+		pkgProduct.PaxCount = &paxVal
+	}
+	if transportMode.Valid && transportMode.String != "" {
+		pkgProduct.TransportMode = &transportMode.String
+	}
+	if transportStatus.Valid {
+		statusStr := "unavailable"
+		if transportStatus.Bool {
+			statusStr = "available"
+		}
+		pkgProduct.TransportStatus = &statusStr
+	}
+
+	meals := make(map[string]bool)
+	if bfStatus.Valid && bfStatus.Bool {
+		meals["breakfast"] = true
+	}
+	if lunchStatus.Valid && lunchStatus.Bool {
+		meals["lunch"] = true
+	}
+	if evSnackStatus.Valid && evSnackStatus.Bool {
+		meals["evening_snack"] = true
+	}
+	if dinnerStatus.Valid && dinnerStatus.Bool {
+		meals["dinner"] = true
+	}
+	if len(meals) > 0 {
+		pkgProduct.MealInclusions = meals
+	}
+
+	return pkgProduct, nil
 }
 
 // CreateProduct creates a new product for a lounge
