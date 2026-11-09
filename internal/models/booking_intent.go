@@ -570,8 +570,9 @@ type PriceBreakdown struct {
 	PostLoungeFare    float64 `json:"post_lounge_fare"`
 	ReturnPreLoungeFare float64 `json:"return_pre_lounge_fare,omitempty"`
 	ReturnPostLoungeFare float64 `json:"return_post_lounge_fare,omitempty"`
-	Total             float64 `json:"total"`
-	Currency          string  `json:"currency"`
+	Total             float64             `json:"total"`
+	Currency          string              `json:"currency"`
+	DiscountApplied   *IntentDiscountInfo `json:"discount_applied,omitempty"`
 }
 
 // InitiatePaymentResponse is returned when initiating payment

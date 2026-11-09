@@ -461,3 +461,27 @@ func (r *PassengerRepository) IsPassengerProfileComplete(userID uuid.UUID) (bool
 
 	return profileCompleted, nil
 }
+
+// GetLoyaltyPoints retrieves the highest loyalty points for a user between passengers table and ledger
+func (r *PassengerRepository) GetLoyaltyPoints(userID uuid.UUID) (int, error) {
+	var points int
+	query := `
+		SELECT GREATEST(
+			COALESCE((SELECT loyalty_points FROM passengers WHERE user_id = $1), 0),
+			COALESCE((SELECT SUM(points) FROM passenger_loyalty_ledger WHERE user_id = $1), 0)
+		)
+	`
+	err := r.db.QueryRow(query, userID).Scan(&points)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		// Fallback to checking passengers table directly
+		passenger, pErr := r.GetPassengerByUserID(userID)
+		if pErr == nil && passenger != nil {
+			return passenger.LoyaltyPoints, nil
+		}
+		return 0, nil
+	}
+	return points, nil
+}

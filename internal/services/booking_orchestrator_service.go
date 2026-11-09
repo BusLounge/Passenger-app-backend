@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -86,6 +87,20 @@ func NewBookingOrchestratorService(
 		config:               config,
 		logger:               logger,
 	}
+}
+
+// getLoyaltyTierAndDiscount calculates tier name and bus fare discount percentage based on points
+func getLoyaltyTierAndDiscount(points int) (string, float64) {
+	if points >= 500 {
+		return "Platinum", 15.0
+	} else if points >= 400 {
+		return "Gold", 10.0
+	} else if points >= 200 {
+		return "Silver", 5.0
+	} else if points >= 100 {
+		return "Bronze", 2.0
+	}
+	return "Blue", 0.0
 }
 
 // ============================================================================
@@ -318,8 +333,42 @@ func (s *BookingOrchestratorService) CreateIntent(
 		returnPostLoungeFare = returnFare
 	}
 
-	// 8. Calculate totals
-	intent.TotalAmount = totalBusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
+	// 8. Calculate totals and check for loyalty tier discount
+	subtotalAmount := totalBusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
+
+	var discountApplied *models.IntentDiscountInfo
+	loyaltyDiscountAmount := 0.0
+
+	// Check passenger loyalty tier if there is bus fare (discounts apply to bus fares)
+	if totalBusFare > 0 {
+		points, err := s.passengerRepo.GetLoyaltyPoints(userID)
+		if err != nil {
+			s.logger.WithError(err).Warn("Failed to retrieve passenger loyalty points for discount")
+		} else if points >= 100 {
+			tierName, discountPct := getLoyaltyTierAndDiscount(points)
+			if discountPct > 0 {
+				loyaltyDiscountAmount = math.Round((totalBusFare*(discountPct/100.0))*100) / 100.0
+				discountApplied = &models.IntentDiscountInfo{
+					Code:           fmt.Sprintf("LOYALTY_%s", strings.ToUpper(tierName)),
+					DiscountType:   "percentage",
+					DiscountValue:  discountPct,
+					DiscountAmount: loyaltyDiscountAmount,
+				}
+				s.logger.WithFields(logrus.Fields{
+					"user_id":         userID,
+					"points":          points,
+					"tier":            tierName,
+					"discount_pct":    discountPct,
+					"discount_amount": loyaltyDiscountAmount,
+				}).Info("Applied passenger loyalty discount to bus fare")
+			}
+		}
+	}
+
+	intent.TotalAmount = subtotalAmount - loyaltyDiscountAmount
+	if intent.TotalAmount < 0 {
+		intent.TotalAmount = 0
+	}
 
 	intent.PricingSnapshot = models.PricingSnapshot{
 		BusFare:              totalBusFare,
@@ -332,6 +381,7 @@ func (s *BookingOrchestratorService) CreateIntent(
 		Total:                intent.TotalAmount,
 		Currency:             intent.Currency,
 		CalculatedAt:         time.Now(),
+		DiscountApplied:      discountApplied,
 	}
 
 	// 8. Save intent to database
@@ -927,17 +977,26 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 			}
 			
 			refID := intent.ID
+			subtotal := intent.TotalAmount
+			discountAmount := 0.0
+			if intent.PricingSnapshot.DiscountApplied != nil {
+				discountAmount = intent.PricingSnapshot.DiscountApplied.DiscountAmount
+				subtotal = intent.TotalAmount + discountAmount
+			}
 			globalTx := &models.Transaction{
 				UserID:            userID,
 				ReferenceType:     "booking", // Refers to a booking intent in this phase
 				ReferenceID:       &refID,
 				PaymentSource:     pg,
 				ProviderReference: paymentReference,
-				Subtotal:          intent.TotalAmount,
+				Subtotal:          subtotal,
 				TaxAmount:         0,
 				TotalAmount:       intent.TotalAmount,
-				PriceBreakdown:    models.TransactionPriceBreakdown{"payment_amount": intent.TotalAmount},
-				Status:            "success",
+				PriceBreakdown: models.TransactionPriceBreakdown{
+					"payment_amount":  intent.TotalAmount,
+					"discount_amount": discountAmount,
+				},
+				Status: "success",
 			}
 			if err := s.transactionRepo.CreateTransaction(nil, globalTx); err != nil {
 				s.logger.WithError(err).Warn("Failed to create global transaction for external gateway")
@@ -1236,11 +1295,23 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 
 	// Determine booking type based on lounge intents
 	bookingType := models.BookingTypeBusOnly
-	totalAmount := intent.PricingSnapshot.BusFare
 	if intent.GetPreTripLoungeIntent() != nil || intent.GetTransitLoungeIntent() != nil || intent.GetPostTripLoungeIntent() != nil {
 		bookingType = models.BookingTypeBusWithLounge
-		totalAmount = intent.TotalAmount
 	}
+
+	discountAmount := 0.0
+	var promoCode *string
+	var promoDiscountType *string
+	var promoDiscountValue float64
+
+	if intent.PricingSnapshot.DiscountApplied != nil {
+		discountAmount = intent.PricingSnapshot.DiscountApplied.DiscountAmount
+		promoCode = &intent.PricingSnapshot.DiscountApplied.Code
+		promoDiscountType = &intent.PricingSnapshot.DiscountApplied.DiscountType
+		promoDiscountValue = intent.PricingSnapshot.DiscountApplied.DiscountValue
+	}
+
+	subtotal := intent.TotalAmount + discountAmount
 
 	loungeTotal := 0.0
 	loungeTransportTotal := 0.0
@@ -1269,8 +1340,12 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 		UserID:               intent.UserID.String(),
 		BookingType:          bookingType,
 		BookingIntentID:      intent.ID.String(),
-		Subtotal:             totalAmount,
-		TotalAmount:          totalAmount,
+		Subtotal:             subtotal,
+		DiscountAmount:       discountAmount,
+		TotalAmount:          intent.TotalAmount,
+		PromoCode:            promoCode,
+		PromoDiscountType:    promoDiscountType,
+		PromoDiscountValue:   promoDiscountValue,
 		PaymentStatus:        models.MasterPaymentPaid, // Paid via intent
 		PaymentGateway:       paymentGateway,
 		PaymentReference:     paymentReference,
@@ -1314,6 +1389,9 @@ func (s *BookingOrchestratorService) createBusBookingFromIntent(intent *models.B
 				scaledFare := payloadFare
 				if rawTotal > 0 {
 					scaledFare = (legRawPrice / rawTotal) * payloadFare
+				}
+				if promoDiscountValue > 0 {
+					scaledFare = scaledFare * (1.0 - (promoDiscountValue / 100.0))
 				}
 
 				book := &models.BusBooking{
@@ -1704,11 +1782,16 @@ func (s *BookingOrchestratorService) GetIntentStatus(
 		IntentID:      intent.ID,
 		Status:        intent.Status,
 		PriceBreakdown: models.PriceBreakdown{
-			BusFare:        intent.PricingSnapshot.BusFare,
-			PreLoungeFare:  intent.PricingSnapshot.PreLoungeFare,
-			PostLoungeFare: intent.PricingSnapshot.PostLoungeFare,
-			Total:          intent.TotalAmount,
-			Currency:       intent.Currency,
+			BusFare:              intent.PricingSnapshot.BusFare,
+			ReturnBusFare:        intent.PricingSnapshot.ReturnBusFare,
+			PreLoungeFare:        intent.PricingSnapshot.PreLoungeFare,
+			TransitLoungeFare:    intent.PricingSnapshot.TransitLoungeFare,
+			PostLoungeFare:       intent.PricingSnapshot.PostLoungeFare,
+			ReturnPreLoungeFare:  intent.PricingSnapshot.ReturnPreLoungeFare,
+			ReturnPostLoungeFare: intent.PricingSnapshot.ReturnPostLoungeFare,
+			Total:                intent.TotalAmount,
+			Currency:             intent.Currency,
+			DiscountApplied:      intent.PricingSnapshot.DiscountApplied,
 		},
 		ExpiresAt: intent.ExpiresAt,
 		IsExpired: intent.IsExpired(),
@@ -2045,7 +2128,14 @@ func (s *BookingOrchestratorService) AddLoungeToIntent(
 	if returnPostLoungeFare == 0 { returnPostLoungeFare = intent.PricingSnapshot.ReturnPostLoungeFare }
 
 	// 3. Update intent with lounge data
-	newTotal := intent.PricingSnapshot.BusFare + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
+	discountAmount := 0.0
+	if intent.PricingSnapshot.DiscountApplied != nil {
+		discountAmount = intent.PricingSnapshot.DiscountApplied.DiscountAmount
+	}
+	newTotal := (intent.PricingSnapshot.BusFare - discountAmount) + preLoungeFare + transitLoungeFare + postLoungeFare + returnPreLoungeFare + returnPostLoungeFare
+	if newTotal < 0 {
+		newTotal = 0
+	}
 	newExpiresAt := time.Now().Add(s.config.IntentTTL) // Extend the hold timer
 
 	// Prepare updated pricing snapshot
@@ -2263,6 +2353,7 @@ func (s *BookingOrchestratorService) buildIntentResponse(intent *models.BookingI
 			ReturnPostLoungeFare: intent.PricingSnapshot.ReturnPostLoungeFare,
 			Total:                intent.TotalAmount,
 			Currency:             intent.Currency,
+			DiscountApplied:      intent.PricingSnapshot.DiscountApplied,
 		},
 		ExpiresAt:                 intent.ExpiresAt,
 		TTLSeconds:                ttl,
