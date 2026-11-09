@@ -536,11 +536,11 @@ func (r *SearchRepository) FindDirectTrips(
 			st.departure_datetime as departure_time,
 			-- Calculate arrival time: departure + duration
 			st.departure_datetime +
-				(COALESCE(st.estimated_duration_minutes, 0) * interval '1 minute') as estimated_arrival,
-			COALESCE(st.estimated_duration_minutes, 0) as duration_minutes,
+				(COALESCE(NULLIF(st.estimated_duration_minutes, 0), ts.estimated_duration_minutes, mr_bor.estimated_duration_minutes, mr_permit.estimated_duration_minutes, 0) * interval '1 minute') as estimated_arrival,
+			COALESCE(NULLIF(st.estimated_duration_minutes, 0), ts.estimated_duration_minutes, mr_bor.estimated_duration_minutes, mr_permit.estimated_duration_minutes, 0) as duration_minutes,
 			-- Available seats removed - will be calculated from separate booking table
 			COALESCE(bslt.total_seats, 0) as total_seats,
-			COALESCE(rp.approved_fare, st.base_fare, 0) as fare,
+			COALESCE(NULLIF(rp.approved_fare, 0), NULLIF(st.base_fare, 0), ts.base_fare, 0) as fare,
 			from_stop.stop_name as boarding_point,
 			to_stop.stop_name as dropping_point,
 			COALESCE(b.has_wifi, false) as has_wifi,
@@ -1292,6 +1292,7 @@ matched_routes AS (
         mr.route_number,
         mr.origin_city        AS main_route_origin,
         mr.destination_city   AS main_route_destination,
+        mr.estimated_duration_minutes AS route_duration_minutes,
         lr_s.stop_before_id   AS boarding_stop_id,
         lr_d.stop_before_id   AS dropping_stop_id
     FROM start_lounges sl
@@ -1345,10 +1346,10 @@ JOIN LATERAL (
         ts.schedule_name                                                        AS schedule_name,
         st.departure_datetime                                                   AS departure_time,
         st.departure_datetime +
-            (COALESCE(st.estimated_duration_minutes,0) * INTERVAL '1 minute')  AS estimated_arrival,
-        COALESCE(st.estimated_duration_minutes, 0)                              AS duration_minutes,
+            (COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, mr_data.route_duration_minutes, 0) * INTERVAL '1 minute')  AS estimated_arrival,
+        COALESCE(NULLIF(st.estimated_duration_minutes, 0), ts.estimated_duration_minutes, mr_data.route_duration_minutes, 0)                              AS duration_minutes,
         COALESCE(bslt.total_seats, 0)                                           AS total_seats,
-        COALESCE(rp.approved_fare, st.base_fare, 0)                             AS fare,
+        COALESCE(NULLIF(rp.approved_fare, 0), NULLIF(st.base_fare, 0), ts.base_fare, 0)                             AS fare,
         COALESCE(b.bus_type, 'Normal')                                          AS bus_type,
         st.is_bookable,
         COALESCE(b.has_wifi,           false) AS has_wifi,
@@ -1631,10 +1632,10 @@ direct_results AS (
     JOIN master_route_stops ds ON ds.id = dp.dropping_stop_id
     JOIN LATERAL (
         SELECT st.id::text AS trip_id, ts.schedule_name AS schedule_name, st.departure_datetime AS departure_time,
-               st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0)*INTERVAL'1 minute') AS estimated_arrival,
-               COALESCE(st.estimated_duration_minutes,0) AS duration_minutes,
+               st.departure_datetime + (COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, 0)*INTERVAL'1 minute') AS estimated_arrival,
+               COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, 0) AS duration_minutes,
                COALESCE(bslt.total_seats,0) AS total_seats,
-               COALESCE(rp.approved_fare,st.base_fare,0) AS fare,
+               COALESCE(NULLIF(rp.approved_fare,0), NULLIF(st.base_fare,0), ts.base_fare, 0) AS fare,
                COALESCE(b.bus_type,'Normal') AS bus_type, st.is_bookable,
                COALESCE(b.has_wifi,false) AS has_wifi, COALESCE(b.has_ac,false) AS has_ac,
                COALESCE(b.has_charging_ports,false) AS has_charging_ports,
@@ -1689,10 +1690,10 @@ transit_results AS (
     JOIN master_route_stops d2s ON d2s.id = tc.d2_id
     JOIN LATERAL (
         SELECT st.id::text AS trip_id, ts.schedule_name AS schedule_name, st.departure_datetime AS departure_time,
-               st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0)*INTERVAL'1 minute') AS estimated_arrival,
-               COALESCE(st.estimated_duration_minutes,0) AS duration_minutes,
+               st.departure_datetime + (COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, 0)*INTERVAL'1 minute') AS estimated_arrival,
+               COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, 0) AS duration_minutes,
                COALESCE(bslt.total_seats,0) AS total_seats,
-               COALESCE(rp.approved_fare,st.base_fare,0) AS fare,
+               COALESCE(NULLIF(rp.approved_fare,0), NULLIF(st.base_fare,0), ts.base_fare, 0) AS fare,
                COALESCE(b.bus_type,'Normal') AS bus_type, st.is_bookable,
                COALESCE(b.has_wifi,false) AS has_wifi, COALESCE(b.has_ac,false) AS has_ac,
                COALESCE(b.has_charging_ports,false) AS has_charging_ports,
@@ -1711,8 +1712,8 @@ transit_results AS (
     ) l1 ON true
     JOIN LATERAL (
         SELECT st.id::text AS trip_id, ts.schedule_name AS schedule_name, st.departure_datetime AS departure_time,
-               st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0)*INTERVAL'1 minute') AS estimated_arrival,
-               COALESCE(rp.approved_fare,st.base_fare,0) AS fare,
+               st.departure_datetime + (COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, 0)*INTERVAL'1 minute') AS estimated_arrival,
+               COALESCE(NULLIF(rp.approved_fare,0), NULLIF(st.base_fare,0), ts.base_fare, 0) AS fare,
                COALESCE(b.bus_type,'Normal') AS bus_type, st.is_bookable
         FROM scheduled_trips st
         LEFT JOIN bus_owner_routes bor ON bor.id = st.bus_owner_route_id
@@ -1986,6 +1987,7 @@ matched_routes AS (
         lr_s.master_route_id,
         mr.route_name,
         mr.route_number,
+        mr.estimated_duration_minutes AS route_duration_minutes,
         lr_s.stop_before_id   AS boarding_stop_id
     FROM start_lounges sl
     JOIN lounge_routes lr_s ON lr_s.lounge_id = sl.lounge_id
@@ -2031,10 +2033,10 @@ JOIN LATERAL (
         ts.schedule_name                                                        AS schedule_name,
         st.departure_datetime                                                   AS departure_time,
         st.departure_datetime +
-            (COALESCE(st.estimated_duration_minutes,0) * INTERVAL '1 minute')  AS estimated_arrival,
-        COALESCE(st.estimated_duration_minutes, 0)                              AS duration_minutes,
+            (COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, mr_data.route_duration_minutes, 0) * INTERVAL '1 minute')  AS estimated_arrival,
+        COALESCE(NULLIF(st.estimated_duration_minutes, 0), ts.estimated_duration_minutes, mr_data.route_duration_minutes, 0)                              AS duration_minutes,
         COALESCE(bslt.total_seats, 0)                                           AS total_seats,
-        COALESCE(rp.approved_fare, st.base_fare, 0)                             AS fare,
+        COALESCE(NULLIF(rp.approved_fare, 0), NULLIF(st.base_fare, 0), ts.base_fare, 0)                             AS fare,
         COALESCE(b.bus_type, 'Normal')                                          AS bus_type,
         st.is_bookable,
         COALESCE(b.has_wifi,           false) AS has_wifi,
@@ -2245,8 +2247,8 @@ JOIN master_route_stops b2 ON b2.id = mc.b2_id
 JOIN master_route_stops d2 ON d2.id = mc.d2_id
 JOIN LATERAL (
     SELECT st.id::text as trip_id, ts.schedule_name as schedule_name, st.departure_datetime as departure_time,
-           st.departure_datetime + (COALESCE(st.estimated_duration_minutes,0) * INTERVAL '1 minute') as estimated_arrival,
-           mr.route_name, mr.route_number, COALESCE(st.base_fare, 0) as fare,
+           st.departure_datetime + (COALESCE(NULLIF(st.estimated_duration_minutes,0), ts.estimated_duration_minutes, mr.estimated_duration_minutes, 0) * INTERVAL '1 minute') as estimated_arrival,
+           mr.route_name, mr.route_number, COALESCE(NULLIF(st.base_fare, 0), ts.base_fare, 0) as fare,
            COALESCE(b.bus_type, 'Normal') as bus_type, mr.id::text as master_route_id
     FROM scheduled_trips st
     JOIN master_routes mr ON mr.id = st.master_route_id
