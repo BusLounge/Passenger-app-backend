@@ -35,8 +35,8 @@ func main() {
 
 	logger.Info("Starting SmartTransit SMS Authentication Backend")
 	logger.Infof("Version: %s, Build Time: %s", version, buildTime)
-	logger.Info("🔍 DEBUG: Lounge Owner registration system ENABLED")
-	logger.Info("🔍 DEBUG: This build includes lounge owner routes")
+	logger.Info("DEBUG: Lounge Owner registration system ENABLED")
+	logger.Info("DEBUG: This build includes lounge owner routes")
 
 	// Load configuration
 	cfg, err := config.Load()
@@ -205,7 +205,7 @@ func main() {
 	staffHandler := handlers.NewStaffHandler(staffService, userRepository, staffRepository, scheduledTripRepo)
 
 	// Initialize active trip service and handler (for Start Trip / End Trip / Location tracking)
-	logger.Info("🚌 Initializing Active Trip tracking system...")
+	logger.Info("Initializing Active Trip tracking system...")
 	activeTripService := services.NewActiveTripService(
 		activeTripRepo,
 		scheduledTripRepo,
@@ -214,7 +214,7 @@ func main() {
 		permitRepository,
 	)
 	activeTripHandler := handlers.NewActiveTripHandler(activeTripService, staffRepository)
-	logger.Info("✓ Active Trip tracking system initialized")
+	logger.Info("Active Trip tracking system initialized")
 
 	// Initialize bus owner and permit handlers
 	busOwnerHandler := handlers.NewBusOwnerHandler(ownerRepository, permitRepository, userRepository, staffRepository)
@@ -227,19 +227,19 @@ func main() {
 	busOwnerRouteHandler := handlers.NewBusOwnerRouteHandler(busOwnerRouteRepo, ownerRepository)
 
 	// Initialize lounge owner, lounge, staff, and admin handlers
-	logger.Info("🔍 DEBUG: Initializing lounge handlers...")
+	logger.Info(" DEBUG: Initializing lounge handlers...")
 	loungeOwnerHandler := handlers.NewLoungeOwnerHandler(loungeOwnerRepository, userRepository)
 	loungeRouteRepository := database.NewLoungeRouteRepository(sqlxDB.DB)
 	loungeHandler := handlers.NewLoungeHandler(loungeRepository, loungeOwnerRepository, loungeRouteRepository)
 	loungeStaffHandler := handlers.NewLoungeStaffHandler(loungeStaffRepository, loungeRepository, loungeOwnerRepository)
 
 	// Initialize lounge booking system
-	logger.Info("🏨 Initializing lounge booking system...")
+	logger.Info("Initializing lounge booking system...")
 	loungeBookingRepo := database.NewLoungeBookingRepository(sqlxDB.DB)
 	loungeBookingHandler := handlers.NewLoungeBookingHandler(loungeBookingRepo, loungeRepository, loungeOwnerRepository, nil)
-	logger.Info("✓ Lounge booking system initialized")
+	logger.Info("Lounge booking system initialized")
 
-	logger.Info("🔍 DEBUG: Lounge handlers initialized successfully")
+	logger.Info("DEBUG: Lounge handlers initialized successfully")
 	adminHandler := handlers.NewAdminHandler(loungeOwnerRepository, loungeRepository, userRepository)
 
 	// Initialize admin authentication repository, service, and handler
@@ -254,14 +254,14 @@ func main() {
 		cfg.JWT.RefreshTokenExpiry,
 	)
 	adminAuthHandler := handlers.NewAdminAuthHandler(adminAuthService, logger)
-	logger.Info("✓ Admin authentication system initialized")
+	logger.Info("Admin authentication system initialized")
 
 	// Initialize bus seat layout system
 	logger.Info("Initializing bus seat layout system...")
 	busSeatLayoutRepository := database.NewBusSeatLayoutRepository(db)
 	busSeatLayoutService := services.NewBusSeatLayoutService(busSeatLayoutRepository)
 	busSeatLayoutHandler := handlers.NewBusSeatLayoutHandler(busSeatLayoutService, logger)
-	logger.Info("✓ Bus seat layout system initialized")
+	logger.Info("Bus seat layout system initialized")
 
 	// Initialize trip scheduling handlers
 	tripScheduleHandler := handlers.NewTripScheduleHandler(
@@ -277,7 +277,7 @@ func main() {
 	logger.Info("Initializing trip seat and manual booking system...")
 	tripSeatRepo := database.NewTripSeatRepository(sqlxDB.DB)
 	manualBookingRepo := database.NewManualBookingRepository(sqlxDB.DB)
-	logger.Info("✓ Trip seat and manual booking repositories initialized")
+	logger.Info("Trip seat and manual booking repositories initialized")
 
 	scheduledTripHandler := handlers.NewScheduledTripHandler(
 		scheduledTripRepo,
@@ -298,13 +298,13 @@ func main() {
 	searchRepo := database.NewSearchRepository(db)
 	searchService := services.NewSearchService(searchRepo, logger)
 	searchHandler := handlers.NewSearchHandler(searchService, logger)
-	logger.Info("✓ Search system initialized")
+	logger.Info("Search system initialized")
 
 	// Initialize Magiya system
 	logger.Info("Initializing Magiya system...")
 	magiyaService := services.NewMagiyaService(logger)
 	magiyaHandler := handlers.NewMagiyaHandler(magiyaService, logger)
-	logger.Info("✓ Magiya system initialized")
+	logger.Info("Magiya system initialized")
 
 	// Initialize Trip Seat Handler (tripSeatRepo already initialized above)
 	tripSeatHandler := handlers.NewTripSeatHandler(
@@ -314,14 +314,14 @@ func main() {
 		ownerRepository,
 		busOwnerRouteRepo,
 	)
-	logger.Info("✓ Trip seat handler initialized")
+	logger.Info("Trip seat handler initialized")
 
 	// Initialize Wallet system first, as App Booking needs it for UI payments
-	logger.Info("💰 Initializing Wallet system...")
+	logger.Info("Initializing Wallet system...")
 	walletRepository := database.NewWalletRepository(sqlxDB.DB)
 	walletService := services.NewWalletService(walletRepository, passengerRepository, smsGateway, 500.0, logger)
 	loungeBookingHandler.SetWalletService(walletService)
-	logger.Info("✓ Wallet system initialized")
+	logger.Info("Wallet system initialized")
 
 	// Initialize App Booking system (passenger app bookings)
 	logger.Info("Initializing app booking system...")
@@ -337,31 +337,31 @@ func main() {
 		logger,
 	)
 	staffBookingHandler := handlers.NewStaffBookingHandler(appBookingRepo)
-	logger.Info("✓ App booking system initialized")
+	logger.Info("App booking system initialized")
 
 	// ============================================================================
 	// BOOKING ORCHESTRATION SYSTEM (Intent → Payment → Confirm)
 	// ============================================================================
-	logger.Info("🎯 Initializing Booking Orchestration system...")
+	logger.Info(" Initializing Booking Orchestration system...")
 	bookingIntentRepo := database.NewBookingIntentRepository(sqlxDB.DB)
 	transportBookingRepo := database.NewTransportBookingRepository(sqlxDB.DB)
 	bookingOrchestratorConfig := services.DefaultOrchestratorConfig()
 	transactionRepo := database.NewTransactionRepository(sqlxDB.DB)
 	// Initialize payment audit repository for logging all payment events
 	paymentAuditRepo := database.NewPaymentAuditRepository(sqlxDB.DB, logger)
-	logger.Info("✓ Payment audit repository initialized")
+	logger.Info("Payment audit repository initialized")
 
 	// Initialize PAYable payment service
 	payableService := services.NewPAYableService(&cfg.Payment, logger)
 	if payableService.IsConfigured() {
-		logger.WithField("environment", payableService.GetEnvironment()).Info("✓ PAYable payment gateway configured")
+		logger.WithField("environment", payableService.GetEnvironment()).Info("PAYable payment gateway configured")
 	} else {
-		logger.Warn("⚠️ PAYable payment gateway not configured - using placeholder mode")
+		logger.Warn(" PAYable payment gateway not configured - using placeholder mode")
 	}
 
 	// Initialize PayHere service
 	payhereService := services.NewPayHereService(cfg.Payment.PayHereMerchantID, cfg.Payment.PayHereMerchantSecret, logger)
-	logger.Info("✓ PayHere Webhook service initialized")
+	logger.Info("PayHere Webhook service initialized")
 
 	// Initialize Wallet handler here (needs payhereService, declared above)
 	walletHandler := handlers.NewWalletHandler(walletService, payhereService, logger)
@@ -395,15 +395,15 @@ func main() {
 		paymentAuditRepo,
 		logger,
 	)
-	logger.Info("✓ Booking Orchestration system initialized")
+	logger.Info("Booking Orchestration system initialized")
 
 
 	// Initialize Complaints System
-	logger.Info("📝 Initializing Complaints system...")
+	logger.Info(" Initializing Complaints system...")
 	complaintRepo := database.NewComplaintRepository(db)
 	complaintService := services.NewComplaintService(complaintRepo, logger)
 	complaintHandler := handlers.NewComplaintHandler(complaintService, logger)
-	logger.Info("✓ Complaints system initialized")
+	logger.Info("Complaints system initialized")
 
 	// Start background job for intent expiration
 	intentExpirationService := services.NewIntentExpirationService(bookingIntentRepo, logger)
@@ -483,50 +483,50 @@ func main() {
 		}
 
 		// Admin Authentication routes (separate from regular user auth)
-		logger.Info("🔐 Registering Admin Authentication routes...")
+		logger.Info(" Registering Admin Authentication routes...")
 		adminAuth := v1.Group("/admin/auth")
 		{
 			// Public routes
-			logger.Info("  ✅ POST /api/v1/admin/auth/login")
+			logger.Info("  POST /api/v1/admin/auth/login")
 			adminAuth.POST("/login", adminAuthHandler.Login)
-			logger.Info("  ✅ POST /api/v1/admin/auth/refresh")
+			logger.Info("  POST /api/v1/admin/auth/refresh")
 			adminAuth.POST("/refresh", adminAuthHandler.RefreshToken)
-			logger.Info("  ✅ POST /api/v1/admin/auth/logout")
+			logger.Info("  POST /api/v1/admin/auth/logout")
 			adminAuth.POST("/logout", adminAuthHandler.Logout)
 
 			// Protected routes (require admin JWT authentication)
 			adminProtected := adminAuth.Group("")
 			adminProtected.Use(middleware.AuthMiddleware(jwtService))
 			{
-				logger.Info("  ✅ GET /api/v1/admin/auth/profile")
+				logger.Info("  GET /api/v1/admin/auth/profile")
 				adminProtected.GET("/profile", adminAuthHandler.GetProfile)
-				logger.Info("  ✅ POST /api/v1/admin/auth/change-password")
+				logger.Info("  POST /api/v1/admin/auth/change-password")
 				adminProtected.POST("/change-password", adminAuthHandler.ChangePassword)
-				logger.Info("  ✅ POST /api/v1/admin/auth/create")
+				logger.Info("  POST /api/v1/admin/auth/create")
 				adminProtected.POST("/create", adminAuthHandler.CreateAdmin)
-				logger.Info("  ✅ GET /api/v1/admin/auth/list")
+				logger.Info("  GET /api/v1/admin/auth/list")
 				adminProtected.GET("/list", adminAuthHandler.ListAdmins)
 			}
 		}
-		logger.Info("🔐 Admin Authentication routes registered successfully")
+		logger.Info(" Admin Authentication routes registered successfully")
 
 		// Bus Seat Layout routes (admin only)
-		logger.Info("🚌 Registering Bus Seat Layout routes...")
+		logger.Info(" Registering Bus Seat Layout routes...")
 		busSeatLayout := v1.Group("/admin/seat-layouts")
 		busSeatLayout.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ POST /api/v1/admin/seat-layouts")
+			logger.Info("  POST /api/v1/admin/seat-layouts")
 			busSeatLayout.POST("", busSeatLayoutHandler.CreateTemplate)
-			logger.Info("  ✅ GET /api/v1/admin/seat-layouts")
+			logger.Info("  GET /api/v1/admin/seat-layouts")
 			busSeatLayout.GET("", busSeatLayoutHandler.ListTemplates)
-			logger.Info("  ✅ GET /api/v1/admin/seat-layouts/:id")
+			logger.Info("  GET /api/v1/admin/seat-layouts/:id")
 			busSeatLayout.GET("/:id", busSeatLayoutHandler.GetTemplate)
-			logger.Info("  ✅ PUT /api/v1/admin/seat-layouts/:id")
+			logger.Info("  PUT /api/v1/admin/seat-layouts/:id")
 			busSeatLayout.PUT("/:id", busSeatLayoutHandler.UpdateTemplate)
-			logger.Info("  ✅ DELETE /api/v1/admin/seat-layouts/:id")
+			logger.Info("  DELETE /api/v1/admin/seat-layouts/:id")
 			busSeatLayout.DELETE("/:id", busSeatLayoutHandler.DeleteTemplate)
 		}
-		logger.Info("🚌 Bus Seat Layout routes registered successfully")
+		logger.Info("Bus Seat Layout routes registered successfully")
 
 		// User routes (protected)
 		user := v1.Group("/user")
@@ -554,7 +554,7 @@ func main() {
 				staffProtected.GET("/my-trips", staffHandler.GetMyTrips)
 
 				// Active Trip routes (Start Trip / End Trip / Location tracking)
-				logger.Info("🚌 Registering Active Trip routes...")
+				logger.Info("Registering Active Trip routes...")
 				staffProtected.GET("/trips/my-active", activeTripHandler.GetMyActiveTrip)
 				staffProtected.POST("/trips/start", activeTripHandler.StartTrip)
 				staffProtected.PUT("/trips/:id/location", activeTripHandler.UpdateLocation)
@@ -562,7 +562,7 @@ func main() {
 				staffProtected.GET("/trips/:id/active", activeTripHandler.GetActiveTrip)
 				staffProtected.PUT("/trips/:id/passengers", activeTripHandler.UpdatePassengerCount)
 				staffProtected.GET("/trips/:id/bookings", staffBookingHandler.GetTripBookings)
-				logger.Info("✓ Active Trip routes registered")
+				logger.Info("Active Trip routes registered")
 			}
 		}
 
@@ -599,109 +599,109 @@ func main() {
 		}
 
 		// Lounge Owner routes (all protected)
-		logger.Info("🏢 Registering Lounge Owner routes...")
+		logger.Info(" Registering Lounge Owner routes...")
 		loungeOwner := v1.Group("/lounge-owner")
 		loungeOwner.Use(middleware.AuthMiddleware(jwtService))
 		{
 			// Registration endpoints (no verification needed - for registration flow)
-			logger.Info("  ✅ POST /api/v1/lounge-owner/register/business-info")
+			logger.Info("POST /api/v1/lounge-owner/register/business-info")
 			loungeOwner.POST("/register/business-info", loungeOwnerHandler.SaveBusinessAndManagerInfo)
-			logger.Info("  ✅ POST /api/v1/lounge-owner/register/upload-manager-nic")
+			logger.Info("  POST /api/v1/lounge-owner/register/upload-manager-nic")
 			loungeOwner.POST("/register/upload-manager-nic", loungeOwnerHandler.UploadManagerNIC)
-			logger.Info("  ✅ POST /api/v1/lounge-owner/register/add-lounge (requires approval)")
+			logger.Info("  POST /api/v1/lounge-owner/register/add-lounge (requires approval)")
 			loungeOwner.POST("/register/add-lounge", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeHandler.AddLounge)
-			logger.Info("  ✅ GET /api/v1/lounge-owner/registration/progress")
+			logger.Info("  GET /api/v1/lounge-owner/registration/progress")
 			loungeOwner.GET("/registration/progress", loungeOwnerHandler.GetRegistrationProgress)
 
 			// Profile endpoints
-			logger.Info("  ✅ GET /api/v1/lounge-owner/profile")
+			logger.Info("  GET /api/v1/lounge-owner/profile")
 			loungeOwner.GET("/profile", loungeOwnerHandler.GetProfile)
 		}
-		logger.Info("🏢 Lounge Owner routes registered successfully")
+		logger.Info("Lounge Owner routes registered successfully")
 
 		// Lounge routes (protected)
-		logger.Info("🏨 Registering Lounge routes...")
+		logger.Info("Registering Lounge routes...")
 		lounges := v1.Group("/lounges")
 		{
 			// Public routes (no authentication)
-			logger.Info("  ✅ GET /api/v1/lounges/active (public)")
+			logger.Info("  GET /api/v1/lounges/active (public)")
 			lounges.GET("/active", loungeHandler.GetAllActiveLounges)
-			logger.Info("  ✅ GET /api/v1/lounges/states (public)")
+			logger.Info("  GET /api/v1/lounges/states (public)")
 			lounges.GET("/states", loungeHandler.GetDistinctStates)
-			logger.Info("  ✅ GET /api/v1/lounges/by-stop/:stopId (public)")
+			logger.Info("  GET /api/v1/lounges/by-stop/:stopId (public)")
 			lounges.GET("/by-stop/:stopId", loungeHandler.GetLoungesByStop)
-			logger.Info("  ✅ GET /api/v1/lounges/by-route/:routeId (public)")
+			logger.Info("  GET /api/v1/lounges/by-route/:routeId (public)")
 			lounges.GET("/by-route/:routeId", loungeHandler.GetLoungesByRoute)
-			logger.Info("  ✅ GET /api/v1/lounges/by-multiple-routes (public)")
+			logger.Info("  GET /api/v1/lounges/by-multiple-routes (public)")
 			lounges.GET("/by-multiple-routes", loungeHandler.GetLoungesByMultipleRoutes)
-			logger.Info("  ✅ GET /api/v1/lounges/by-route-near (public)")
+			logger.Info("  GET /api/v1/lounges/by-route-near (public)")
 			lounges.GET("/by-route-near", loungeHandler.GetLoungesByRouteNear)
-			logger.Info("  ✅ GET /api/v1/lounges/near-stop/:routeId/:stopId (public)")
+			logger.Info("  GET /api/v1/lounges/near-stop/:routeId/:stopId (public)")
 			lounges.GET("/near-stop/:routeId/:stopId", loungeHandler.GetLoungesNearStop)
 			// Using the 'near-stop' pattern to bypass Choreo gateway restrictions
 			lounges.GET("/near-stop/discovery/:id", loungeBookingHandler.GetLoungeTransportOptions)
 			
 			// BYPASS FOR PAYHERE WEBHOOK
-			logger.Info("  ✅ POST /api/v1/lounges/near-stop/webhook/payhere (public)")
+			logger.Info("  POST /api/v1/lounges/near-stop/webhook/payhere (public)")
 			lounges.POST("/near-stop/webhook/payhere", bookingOrchestratorHandler.PayHereWebhook)
 
-			logger.Info("  ✅ POST /api/v1/lounges/recommendation-stats (public)")
+			logger.Info("  POST /api/v1/lounges/recommendation-stats (public)")
 			lounges.POST("/recommendation-stats", loungeBookingHandler.GetLoungeRecommendationStats)
 
 			// Protected routes (require JWT authentication)
 			loungesProtected := lounges.Group("")
 			loungesProtected.Use(middleware.AuthMiddleware(jwtService))
 			{
-				logger.Info("  ✅ GET /api/v1/lounges/my-lounges (read-only, no approval needed)")
+				logger.Info("  GET /api/v1/lounges/my-lounges (read-only, no approval needed)")
 				loungesProtected.GET("/my-lounges", loungeHandler.GetMyLounges)
-				logger.Info("  ✅ GET /api/v1/lounges/:id (read-only, no approval needed)")
+				logger.Info("  GET /api/v1/lounges/:id (read-only, no approval needed)")
 				loungesProtected.GET("/:id", loungeHandler.GetLoungeByID)
 
 				// Write operations require approval
-				logger.Info("  ✅ PUT /api/v1/lounges/:id (requires approval)")
+				logger.Info("  PUT /api/v1/lounges/:id (requires approval)")
 				loungesProtected.PUT("/:id", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeHandler.UpdateLounge)
-				logger.Info("  ✅ DELETE /api/v1/lounges/:id (requires approval)")
+				logger.Info("  DELETE /api/v1/lounges/:id (requires approval)")
 				loungesProtected.DELETE("/:id", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeHandler.DeleteLounge)
 
 				// Staff management for specific lounge (requires approval)
-				logger.Info("  ✅ POST /api/v1/lounges/:id/staff (requires approval)")
+				logger.Info("  POST /api/v1/lounges/:id/staff (requires approval)")
 				loungesProtected.POST("/:id/staff", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeStaffHandler.AddStaff)
-				logger.Info("  ✅ GET /api/v1/lounges/:id/staff (read-only, no approval needed)")
+				logger.Info("  GET /api/v1/lounges/:id/staff (read-only, no approval needed)")
 				loungesProtected.GET("/:id/staff", loungeStaffHandler.GetStaffByLounge)
 				// Permission management moved to users.roles array - removed permission_type field
-				logger.Info("  ✅ PUT /api/v1/lounges/:id/staff/:staff_id/status (requires approval)")
+				logger.Info("  PUT /api/v1/lounges/:id/staff/:staff_id/status (requires approval)")
 				loungesProtected.PUT("/:id/staff/:staff_id/status", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeStaffHandler.UpdateStaffStatus)
-				logger.Info("  ✅ DELETE /api/v1/lounges/:id/staff/:staff_id (requires approval)")
+				logger.Info("  DELETE /api/v1/lounges/:id/staff/:staff_id (requires approval)")
 				loungesProtected.DELETE("/:id/staff/:staff_id", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeStaffHandler.RemoveStaff)
 
 				// BYPASS ROUTES FOR CHOREO GATEWAY RESTRICTIONS
-				logger.Info("  ✅ GET /api/v1/lounges/near-stop/wallet-bypass/hash (protected)")
+				logger.Info("  GET /api/v1/lounges/near-stop/wallet-bypass/hash (protected)")
 				loungesProtected.GET("/near-stop/wallet-bypass/hash", walletHandler.GetTopUpHash)
-				logger.Info("  ✅ POST & GET /api/v1/lounges/near-stop/wallet-bypass/confirm (protected)")
+				logger.Info("  POST & GET /api/v1/lounges/near-stop/wallet-bypass/confirm (protected)")
 				loungesProtected.POST("/near-stop/wallet-bypass/confirm", walletHandler.ConfirmTopUp)
 				loungesProtected.GET("/near-stop/wallet-bypass/confirm", walletHandler.ConfirmTopUp)
 				// We also add /data just in case they need to call getWalletData via a bypass later
 				loungesProtected.GET("/near-stop/wallet-bypass/data", walletHandler.GetWallet)
 
 				// BYPASS ROUTES FOR TRANSPORT BOOKINGS
-				logger.Info("  ✅ POST /api/v1/lounges/near-stop/transport/lounge/:id (protected)")
+				logger.Info("  POST /api/v1/lounges/near-stop/transport/lounge/:id (protected)")
 				loungesProtected.POST("/near-stop/transport/lounge/:id", bookingOrchestratorHandler.AddTransportToLoungeBooking)
 				loungesProtected.POST("/near-stop/transport/:id/confirm-payment", bookingOrchestratorHandler.ConfirmTransportPayment)
-				logger.Info("  ✅ POST /api/v1/lounges/near-stop/transport/master/:id (protected)")
+				logger.Info("  POST /api/v1/lounges/near-stop/transport/master/:id (protected)")
 				loungesProtected.POST("/near-stop/transport/master/:id", bookingOrchestratorHandler.AddTransportToMasterBooking)
 			}
 		}
-		logger.Info("🏨 Lounge routes registered successfully")
+		logger.Info("Lounge routes registered successfully")
 
 		// ============================================================================
 		// LOUNGE BOOKING & MARKETPLACE ROUTES
 		// ============================================================================
-		logger.Info("🏨 Registering Lounge Booking routes...")
+		logger.Info("Registering Lounge Booking routes...")
 
 		// Lounge Marketplace - Categories (public)
 		loungeMarketplace := v1.Group("/lounge-marketplace")
 		{
-			logger.Info("  ✅ GET /api/v1/lounge-marketplace/categories (public)")
+			logger.Info("  GET /api/v1/lounge-marketplace/categories (public)")
 			loungeMarketplace.GET("/categories", loungeBookingHandler.GetCategories)
 		}
 
@@ -710,19 +710,19 @@ func main() {
 		loungesProtectedProducts.Use(middleware.AuthMiddleware(jwtService))
 		{
 			// Products for a lounge (anyone can view, owner can manage)
-			logger.Info("  ✅ GET /api/v1/lounges/:id/products (read-only, no approval needed)")
+			logger.Info("  GET /api/v1/lounges/:id/products (read-only, no approval needed)")
 			loungesProtectedProducts.GET("/:id/products", loungeBookingHandler.GetLoungeProducts)
-			logger.Info("  ✅ POST /api/v1/lounges/:id/products (requires approval)")
+			logger.Info("  POST /api/v1/lounges/:id/products (requires approval)")
 			loungesProtectedProducts.POST("/:id/products", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeBookingHandler.CreateProduct)
-			logger.Info("  ✅ PUT /api/v1/lounges/:id/products/:product_id (requires approval)")
+			logger.Info("  PUT /api/v1/lounges/:id/products/:product_id (requires approval)")
 			loungesProtectedProducts.PUT("/:id/products/:product_id", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeBookingHandler.UpdateProduct)
-			logger.Info("  ✅ DELETE /api/v1/lounges/:id/products/:product_id (requires approval)")
+			logger.Info("  DELETE /api/v1/lounges/:id/products/:product_id (requires approval)")
 			loungesProtectedProducts.DELETE("/:id/products/:product_id", middleware.RequireApprovedLoungeOwner(loungeOwnerRepository), loungeBookingHandler.DeleteProduct)
 
 			// Bookings for a lounge (owner/staff view - read-only, no approval needed)
-			logger.Info("  ✅ GET /api/v1/lounges/:id/bookings (owner/staff, read-only)")
+			logger.Info("  GET /api/v1/lounges/:id/bookings (owner/staff, read-only)")
 			loungesProtectedProducts.GET("/:id/bookings", loungeBookingHandler.GetLoungeBookingsForOwner)
-			logger.Info("  ✅ GET /api/v1/lounges/:id/bookings/today (owner/staff, read-only)")
+			logger.Info("  GET /api/v1/lounges/:id/bookings/today (owner/staff, read-only)")
 			loungesProtectedProducts.GET("/:id/bookings/today", loungeBookingHandler.GetTodaysBookings)
 		}
 
@@ -730,29 +730,29 @@ func main() {
 		loungeBookings := v1.Group("/lounge-bookings")
 		loungeBookings.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ POST /api/v1/lounge-bookings - Create lounge booking")
+			logger.Info("  POST /api/v1/lounge-bookings - Create lounge booking")
 			loungeBookings.POST("", loungeBookingHandler.CreateLoungeBooking)
-			logger.Info("  ✅ GET /api/v1/lounge-bookings - Get my lounge bookings")
+			logger.Info("  GET /api/v1/lounge-bookings - Get my lounge bookings")
 			loungeBookings.GET("", loungeBookingHandler.GetMyLoungeBookings)
-			logger.Info("  ✅ GET /api/v1/lounge-bookings/upcoming - Get upcoming bookings")
+			logger.Info("  GET /api/v1/lounge-bookings/upcoming - Get upcoming bookings")
 			loungeBookings.GET("/upcoming", loungeBookingHandler.GetUpcomingLoungeBookings)
-			logger.Info("  ✅ GET /api/v1/lounge-bookings/:id - Get booking by ID")
+			logger.Info("  GET /api/v1/lounge-bookings/:id - Get booking by ID")
 			loungeBookings.GET("/:id", loungeBookingHandler.GetLoungeBookingByID)
-			logger.Info("  ✅ GET /api/v1/lounge-bookings/reference/:reference - Get by reference")
+			logger.Info("  GET /api/v1/lounge-bookings/reference/:reference - Get by reference")
 			loungeBookings.GET("/reference/:reference", loungeBookingHandler.GetLoungeBookingByReference)
-			logger.Info("  ✅ POST /api/v1/lounge-bookings/:id/cancel - Cancel booking")
+			logger.Info("  POST /api/v1/lounge-bookings/:id/cancel - Cancel booking")
 			loungeBookings.POST("/:id/cancel", loungeBookingHandler.CancelLoungeBooking)
-			logger.Info("  ✅ POST /api/v1/lounge-bookings/:id/transport - Add transport to lounge booking")
+			logger.Info("  POST /api/v1/lounge-bookings/:id/transport - Add transport to lounge booking")
 			loungeBookings.POST("/:id/transport", bookingOrchestratorHandler.AddTransportToLoungeBooking)
 
 			// Staff operations
-			logger.Info("  ✅ POST /api/v1/lounge-bookings/:id/check-in - Check in guest")
+			logger.Info("  POST /api/v1/lounge-bookings/:id/check-in - Check in guest")
 			loungeBookings.POST("/:id/check-in", loungeBookingHandler.CheckInGuest)
-			logger.Info("  ✅ POST /api/v1/lounge-bookings/:id/complete - Complete booking")
+			logger.Info("  POST /api/v1/lounge-bookings/:id/complete - Complete booking")
 			loungeBookings.POST("/:id/complete", loungeBookingHandler.CompleteLoungeBooking)
 
 			// Orders for a booking
-			logger.Info("  ✅ GET /api/v1/lounge-bookings/:id/orders - Get booking orders")
+			logger.Info("  GET /api/v1/lounge-bookings/:id/orders - Get booking orders")
 			loungeBookings.GET("/:id/orders", loungeBookingHandler.GetBookingOrders)
 		}
 
@@ -760,24 +760,24 @@ func main() {
 		loungeOrders := v1.Group("/lounge-orders")
 		loungeOrders.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ POST /api/v1/lounge-orders - Create in-lounge order")
+			logger.Info("  POST /api/v1/lounge-orders - Create in-lounge order")
 			loungeOrders.POST("", loungeBookingHandler.CreateLoungeOrder)
-			logger.Info("  ✅ PUT /api/v1/lounge-orders/:id/status - Update order status")
+			logger.Info("  PUT /api/v1/lounge-orders/:id/status - Update order status")
 			loungeOrders.PUT("/:id/status", loungeBookingHandler.UpdateOrderStatus)
-			logger.Info("  ✅ POST /api/v1/lounge-orders/:id/pay - Pay lounge order")
+			logger.Info("  POST /api/v1/lounge-orders/:id/pay - Pay lounge order")
 			loungeOrders.POST("/:id/pay", loungeBookingHandler.PayLoungeOrder)
 		}
-		logger.Info("🏨 Lounge Booking routes registered successfully")
+		logger.Info(" Lounge Booking routes registered successfully")
 
 		// Staff profile routes (for lounge staff members)
-		logger.Info("👤 Registering Staff profile routes...")
+		logger.Info(" Registering Staff profile routes...")
 		staffProfile := v1.Group("/staff")
 		staffProfile.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ GET /api/v1/staff/my-profile")
+			logger.Info("  GET /api/v1/staff/my-profile")
 			staffProfile.GET("/my-profile", loungeStaffHandler.GetMyStaffProfile)
 		}
-		logger.Info("👤 Staff profile routes registered successfully")
+		logger.Info(" Staff profile routes registered successfully")
 
 		// Permit routes (all protected)
 		permits := v1.Group("/permits")
@@ -849,6 +849,13 @@ func main() {
 			specialTrips.POST("", middleware.RequireVerifiedBusOwner(ownerRepository), scheduledTripHandler.CreateSpecialTrip)
 		}
 
+		// ============================================================================
+		// TRIP SEATS PUBLIC ROUTES (Seat availability for passengers and public)
+		// ============================================================================
+		v1.GET("/scheduled-trips/:id/seats", tripSeatHandler.GetTripSeats)
+		v1.GET("/scheduled-trips/:id/seats/summary", tripSeatHandler.GetTripSeatSummary)
+		v1.GET("/scheduled-trips/:id/route-stops", tripSeatHandler.GetTripRouteStops)
+
 		// Scheduled Trip routes (all protected - bus owners only)
 		scheduledTrips := v1.Group("/scheduled-trips")
 		scheduledTrips.Use(middleware.AuthMiddleware(jwtService))
@@ -875,11 +882,6 @@ func main() {
 			// ============================================================================
 			// TRIP SEATS ROUTES (Seat management for scheduled trips)
 			// ============================================================================
-			// Read endpoints (no verification needed)
-			scheduledTrips.GET("/:id/seats", tripSeatHandler.GetTripSeats)
-			scheduledTrips.GET("/:id/seats/summary", tripSeatHandler.GetTripSeatSummary)
-			scheduledTrips.GET("/:id/route-stops", tripSeatHandler.GetTripRouteStops)
-
 			// Write endpoints (requires verification)
 			scheduledTrips.POST("/:id/seats/create", middleware.RequireVerifiedBusOwner(ownerRepository), tripSeatHandler.CreateTripSeats)
 			scheduledTrips.POST("/:id/seats/block", middleware.RequireVerifiedBusOwner(ownerRepository), tripSeatHandler.BlockSeats)
@@ -897,135 +899,135 @@ func main() {
 		}
 
 		// Manual Bookings standalone routes (for operations on existing bookings)
-		logger.Info("📋 Registering Manual Booking routes...")
+		logger.Info(" Registering Manual Booking routes...")
 		manualBookings := v1.Group("/manual-bookings")
 		manualBookings.Use(middleware.AuthMiddleware(jwtService))
 		{
 			// Read endpoints (no verification needed)
-			logger.Info("  ✅ GET /api/v1/manual-bookings/:id")
+			logger.Info("  GET /api/v1/manual-bookings/:id")
 			manualBookings.GET("/:id", tripSeatHandler.GetManualBooking)
-			logger.Info("  ✅ GET /api/v1/manual-bookings/reference/:ref")
+			logger.Info("  GET /api/v1/manual-bookings/reference/:ref")
 			manualBookings.GET("/reference/:ref", tripSeatHandler.GetManualBookingByReference)
-			logger.Info("  ✅ GET /api/v1/manual-bookings/search")
+			logger.Info("  GET /api/v1/manual-bookings/search")
 			manualBookings.GET("/search", tripSeatHandler.SearchManualBookingsByPhone)
 
 			// Write endpoints (requires verification)
-			logger.Info("  ✅ PUT /api/v1/manual-bookings/:id/payment (requires verification)")
+			logger.Info("  PUT /api/v1/manual-bookings/:id/payment (requires verification)")
 			manualBookings.PUT("/:id/payment", middleware.RequireVerifiedBusOwner(ownerRepository), tripSeatHandler.UpdateManualBookingPayment)
-			logger.Info("  ✅ PUT /api/v1/manual-bookings/:id/status (requires verification)")
+			logger.Info("  PUT /api/v1/manual-bookings/:id/status (requires verification)")
 			manualBookings.PUT("/:id/status", middleware.RequireVerifiedBusOwner(ownerRepository), tripSeatHandler.UpdateManualBookingStatus)
-			logger.Info("  ✅ DELETE /api/v1/manual-bookings/:id (requires verification)")
+			logger.Info("  DELETE /api/v1/manual-bookings/:id (requires verification)")
 			manualBookings.DELETE("/:id", middleware.RequireVerifiedBusOwner(ownerRepository), tripSeatHandler.CancelManualBooking)
 		}
-		logger.Info("📋 Manual Booking routes registered successfully")
+		logger.Info(" Manual Booking routes registered successfully")
 
 		// ============================================================================
 		// APP BOOKINGS ROUTES (Passenger app bookings)
 		// ============================================================================
-		logger.Info("📱 Registering App Booking routes...")
+		logger.Info(" Registering App Booking routes...")
 		appBookings := v1.Group("/bookings")
 		appBookings.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ POST /api/v1/bookings - Create new booking")
+			logger.Info("  POST /api/v1/bookings - Create new booking")
 			appBookings.POST("", appBookingHandler.CreateBooking)
-			logger.Info("  ✅ GET /api/v1/bookings - Get my bookings")
+			logger.Info("  GET /api/v1/bookings - Get my bookings")
 			appBookings.GET("", appBookingHandler.GetMyBookings)
-			logger.Info("  ✅ GET /api/v1/bookings/upcoming - Get upcoming bookings")
+			logger.Info("  GET /api/v1/bookings/upcoming - Get upcoming bookings")
 			appBookings.GET("/upcoming", appBookingHandler.GetUpcomingBookings)
-			logger.Info("  ✅ GET /api/v1/bookings/completed - Get completed bookings")
+			logger.Info("  GET /api/v1/bookings/completed - Get completed bookings")
 			appBookings.GET("/completed", appBookingHandler.GetCompletedBookings)
-			logger.Info("  ✅ GET /api/v1/bookings/cancelled - Get cancelled/expired bookings")
+			logger.Info("  GET /api/v1/bookings/cancelled - Get cancelled/expired bookings")
 			appBookings.GET("/cancelled", appBookingHandler.GetExpiredOrCancelledBookings)
 			logger.Info("  ? GET /api/v1/bookings/cancelled-refunds - Get cancelled bookings with refund updates")
 			appBookings.GET("/cancelled-refunds", appBookingHandler.GetCancelledBookingsWithRefunds)
-			logger.Info("  ✅ GET /api/v1/bookings/:id - Get booking by ID")
+			logger.Info("  GET /api/v1/bookings/:id - Get booking by ID")
 			appBookings.GET("/:id", appBookingHandler.GetBookingByID)
-			logger.Info("  ✅ GET /api/v1/bookings/reference/:reference - Get booking by reference")
+			logger.Info("  GET /api/v1/bookings/reference/:reference - Get booking by reference")
 			appBookings.GET("/reference/:reference", appBookingHandler.GetBookingByReference)
-			logger.Info("  ✅ POST /api/v1/bookings/:id/confirm-payment - Confirm payment")
+			logger.Info("  POST /api/v1/bookings/:id/confirm-payment - Confirm payment")
 			appBookings.POST("/:id/confirm-payment", appBookingHandler.ConfirmPayment)
-			logger.Info("  ✅ POST /api/v1/bookings/:id/cancel - Cancel booking")
+			logger.Info("  POST /api/v1/bookings/:id/cancel - Cancel booking")
 			appBookings.POST("/:id/cancel", appBookingHandler.CancelBooking)
-			logger.Info("  ✅ POST /api/v1/bookings/:id/transport - Add transport to master booking")
+			logger.Info("  POST /api/v1/bookings/:id/transport - Add transport to master booking")
 			appBookings.POST("/:id/transport", bookingOrchestratorHandler.AddTransportToMasterBooking)
 			appBookings.POST("/transport/:id/confirm-payment", bookingOrchestratorHandler.ConfirmTransportPayment)
-			logger.Info("  ✅ GET /api/v1/bookings/:id/qr - Get booking QR code")
+			logger.Info("  GET /api/v1/bookings/:id/qr - Get booking QR code")
 			appBookings.GET("/:id/qr", appBookingHandler.GetBookingQR)
 		}
-		logger.Info("📱 App Booking routes registered successfully")
+		logger.Info(" App Booking routes registered successfully")
 
 		// ============================================================================
 		// ACTIVE TRIP TRACKING ROUTES (Passenger bus tracking)
 		// ============================================================================
-		logger.Info("🚌 Registering Active Trip Tracking routes...")
+		logger.Info(" Registering Active Trip Tracking routes...")
 		activeTrips := v1.Group("/active-trips")
 		activeTrips.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ GET /api/v1/active-trips/by-scheduled-trip/:scheduled_trip_id - Track bus by scheduled trip ID")
+			logger.Info("  GET /api/v1/active-trips/by-scheduled-trip/:scheduled_trip_id - Track bus by scheduled trip ID")
 			activeTrips.GET("/by-scheduled-trip/:scheduled_trip_id", activeTripHandler.GetActiveTripByScheduledTripID)
 		}
-		logger.Info("🚌 Active Trip Tracking routes registered successfully")
+		logger.Info(" Active Trip Tracking routes registered successfully")
 
 		// ============================================================================
 		// BOOKING ORCHESTRATION ROUTES (Intent → Payment → Confirm)
 		// ============================================================================
-		logger.Info("🎯 Registering Booking Orchestration routes...")
+		logger.Info(" Registering Booking Orchestration routes...")
 
 		// Booking Intent routes (protected - requires auth)
 		bookingOrchestration := v1.Group("/booking")
 		bookingOrchestration.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ POST /api/v1/booking/intent - Create booking intent")
+			logger.Info("  POST /api/v1/booking/intent - Create booking intent")
 			bookingOrchestration.POST("/intent", bookingOrchestratorHandler.CreateIntent)
 
-			logger.Info("  ✅ GET /api/v1/booking/intents - Get my intents")
+			logger.Info("  GET /api/v1/booking/intents - Get my intents")
 			bookingOrchestration.GET("/intents", bookingOrchestratorHandler.GetMyIntents)
 
-			logger.Info("  ✅ GET /api/v1/booking/intent/:intent_id - Get intent status")
+			logger.Info("  GET /api/v1/booking/intent/:intent_id - Get intent status")
 			bookingOrchestration.GET("/intent/:intent_id", bookingOrchestratorHandler.GetIntentStatus)
 
-			logger.Info("  ✅ POST /api/v1/booking/intent/:intent_id/initiate-payment - Initiate payment")
+			logger.Info("  POST /api/v1/booking/intent/:intent_id/initiate-payment - Initiate payment")
 			bookingOrchestration.POST("/intent/:intent_id/initiate-payment", bookingOrchestratorHandler.InitiatePayment)
 
-			logger.Info("  ✅ POST /api/v1/booking/intent/:intent_id/cancel - Cancel intent")
+			logger.Info("  POST /api/v1/booking/intent/:intent_id/cancel - Cancel intent")
 			bookingOrchestration.POST("/intent/:intent_id/cancel", bookingOrchestratorHandler.CancelIntent)
 
-			logger.Info("  ✅ PATCH /api/v1/booking/intent/:intent_id/add-lounge - Add lounge to intent")
+			logger.Info("  PATCH /api/v1/booking/intent/:intent_id/add-lounge - Add lounge to intent")
 			bookingOrchestration.PATCH("/intent/:intent_id/add-lounge", bookingOrchestratorHandler.AddLoungeToIntent)
 
-			logger.Info("  ✅ POST /api/v1/booking/confirm - Confirm booking after payment")
+			logger.Info("  POST /api/v1/booking/confirm - Confirm booking after payment")
 			bookingOrchestration.POST("/confirm", bookingOrchestratorHandler.ConfirmBooking)
 		}
 
 		// Payment webhook (no auth - called by payment gateway)
-		logger.Info("  ✅ POST /api/v1/payments/webhook - Payment gateway webhook")
+		logger.Info("  POST /api/v1/payments/webhook - Payment gateway webhook")
 		v1.POST("/payments/webhook", bookingOrchestratorHandler.PaymentWebhook)
 
 		// PayHere webhook
-		logger.Info("  ✅ POST /api/v1/payments/payhere/webhook - PayHere gateway webhook")
+		logger.Info("  POST /api/v1/payments/payhere/webhook - PayHere gateway webhook")
 		v1.POST("/payments/payhere/webhook", bookingOrchestratorHandler.PayHereWebhook)
 
 		// Payment return URL (no auth - browser redirect from payment gateway)
-		logger.Info("  ✅ GET /api/v1/payments/return - Payment return page")
+		logger.Info("  GET /api/v1/payments/return - Payment return page")
 		v1.GET("/payments/return", bookingOrchestratorHandler.PaymentReturn)
 
-		logger.Info("🎯 Booking Orchestration routes registered successfully")
+		logger.Info(" Booking Orchestration routes registered successfully")
 
 		// ============================================================================
 		// WALLET ROUTES (Passenger Balance & Top-Up)
 		// ============================================================================
-		logger.Info("💰 Registering Wallet routes...")
+		logger.Info("Registering Wallet routes...")
 		wallet := v1.Group("/wallet")
 		wallet.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ GET /api/v1/wallet - Get Wallet Balance")
+			logger.Info("  GET /api/v1/wallet - Get Wallet Balance")
 			wallet.GET("", walletHandler.GetWallet)
-			logger.Info("  ✅ POST /api/v1/wallet/topup/confirm - Confirm TopUp directly")
+			logger.Info("  POST /api/v1/wallet/topup/confirm - Confirm TopUp directly")
 			wallet.POST("/topup/confirm", walletHandler.ConfirmTopUp)
-			logger.Info("  ✅ GET /api/v1/wallet/topup/hash - Generate PayHere checkout hash server-side")
+			logger.Info("  GET /api/v1/wallet/topup/hash - Generate PayHere checkout hash server-side")
 			wallet.GET("/topup/hash", walletHandler.GetTopUpHash)
 		}
-		logger.Info("💰 Wallet routes registered successfully")
+		logger.Info("Wallet routes registered successfully")
 
 		// ============================================================================
 		// PAYMENT METHODS / SAVED CARDS ROUTES
@@ -1042,20 +1044,20 @@ func main() {
 		// ============================================================================
 		// STAFF BOOKING ROUTES (Conductor/Driver operations)
 		// ============================================================================
-		logger.Info("👨‍✈️ Registering Staff Booking routes...")
+		logger.Info("‍️ Registering Staff Booking routes...")
 		staffBookings := v1.Group("/staff/bookings")
 		staffBookings.Use(middleware.AuthMiddleware(jwtService))
 		{
-			logger.Info("  ✅ POST /api/v1/staff/bookings/verify - Verify booking by QR")
+			logger.Info("  POST /api/v1/staff/bookings/verify - Verify booking by QR")
 			staffBookings.POST("/verify", staffBookingHandler.VerifyBookingByQR)
-			logger.Info("  ✅ POST /api/v1/staff/bookings/check-in - Check-in passenger")
+			logger.Info("  POST /api/v1/staff/bookings/check-in - Check-in passenger")
 			staffBookings.POST("/check-in", staffBookingHandler.CheckInPassenger)
-			logger.Info("  ✅ POST /api/v1/staff/bookings/board - Board passenger")
+			logger.Info("  POST /api/v1/staff/bookings/board - Board passenger")
 			staffBookings.POST("/board", staffBookingHandler.BoardPassenger)
-			logger.Info("  ✅ POST /api/v1/staff/bookings/no-show - Mark no-show")
+			logger.Info("  POST /api/v1/staff/bookings/no-show - Mark no-show")
 			staffBookings.POST("/no-show", staffBookingHandler.MarkNoShow)
 		}
-		logger.Info("👨‍✈️ Staff Booking routes registered successfully")
+		logger.Info("‍️ Staff Booking routes registered successfully")
 
 		// Permit-specific trip routes
 		permits.GET("/:id/trip-schedules", tripScheduleHandler.GetSchedulesByPermit)
@@ -1067,39 +1069,39 @@ func main() {
 		// ============================================================================
 		// SEARCH ROUTES (Phase 1 MVP - Trip Discovery)
 		// ============================================================================
-		logger.Info("🔍 Registering Search routes...")
+		logger.Info("Registering Search routes...")
 
 		// Public search routes (no authentication required)
 		search := v1.Group("/search")
 		{
-			logger.Info("  ✅ POST /api/v1/search - Main search endpoint")
+			logger.Info("  POST /api/v1/search - Main search endpoint")
 			search.POST("", searchHandler.SearchTrips)
 
-			logger.Info("  ✅ GET /api/v1/search/popular - Popular routes")
+			logger.Info("  GET /api/v1/search/popular - Popular routes")
 			search.GET("/popular", searchHandler.GetPopularRoutes)
 
-			logger.Info("  ✅ GET /api/v1/search/autocomplete - Stop suggestions")
+			logger.Info("  GET /api/v1/search/autocomplete - Stop suggestions")
 			search.GET("/autocomplete", searchHandler.GetStopAutocomplete)
 
-			logger.Info("  ✅ GET /api/v1/search/health - Health check")
+			logger.Info("  GET /api/v1/search/health - Health check")
 			search.GET("/health", searchHandler.HealthCheck)
 		}
-		logger.Info("🔍 Search routes registered successfully")
+		logger.Info("Search routes registered successfully")
 
 		// Magiya routes
-		logger.Info("🚇 Registering Magiya routes...")
+		logger.Info("Registering Magiya routes...")
 		magiya := v1.Group("/magiya")
 		{
-			logger.Info("  ✅ GET /api/v1/magiya/stations")
+			logger.Info("  GET /api/v1/magiya/stations")
 			magiya.GET("/stations", magiyaHandler.GetStations)
 
-			logger.Info("  ✅ GET /api/v1/magiya/schedules")
+			logger.Info("  GET /api/v1/magiya/schedules")
 			magiya.GET("/schedules", magiyaHandler.GetSchedules)
 
-			logger.Info("  ✅ GET /api/v1/magiya/seat-map")
+			logger.Info("  GET /api/v1/magiya/seat-map")
 			magiya.GET("/seat-map", magiyaHandler.GetSeatLayout)
 		}
-		logger.Info("🚇 Magiya routes registered successfully")
+		logger.Info("Magiya routes registered successfully")
 
 		// System Settings routes (protected)
 		systemSettings := v1.Group("/system-settings")

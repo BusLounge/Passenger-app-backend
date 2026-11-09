@@ -54,21 +54,21 @@ func (h *BusOwnerRouteHandler) CreateRoute(c *gin.Context) {
 	}
 
 	// Log the request for debugging
-	log.Printf("🚌 [BUS OWNER ROUTE] CreateRoute - User: %s, MasterRoute: %s, Name: %s, Direction: %s, Stops: %d",
+	log.Printf(" [BUS OWNER ROUTE] CreateRoute - User: %s, MasterRoute: %s, Name: %s, Direction: %s, Stops: %d",
 		userCtx.UserID.String(), req.MasterRouteID, req.CustomRouteName, req.Direction, len(req.SelectedStopIDs))
 
 	// Get bus owner record by user_id
-	log.Printf("🔍 [BUS OWNER ROUTE] Fetching bus owner for user: %s", userCtx.UserID.String())
+	log.Printf("[BUS OWNER ROUTE] Fetching bus owner for user: %s", userCtx.UserID.String())
 	busOwner, err := h.busOwnerRepo.GetByUserID(userCtx.UserID.String())
 	if err != nil {
-		log.Printf("❌ [BUS OWNER ROUTE] Failed to find bus owner: %v", err)
+		log.Printf("ERROR: [BUS OWNER ROUTE] Failed to find bus owner: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error":   "Bus owner profile not found",
 			"details": "Please complete your bus owner registration first",
 		})
 		return
 	}
-	log.Printf("✅ [BUS OWNER ROUTE] Found bus owner: %s", busOwner.ID)
+	log.Printf("[BUS OWNER ROUTE] Found bus owner: %s", busOwner.ID)
 
 	// Check if bus owner is verified before allowing route creation
 	if !h.checkBusOwnerVerified(c, busOwner) {
@@ -77,16 +77,16 @@ func (h *BusOwnerRouteHandler) CreateRoute(c *gin.Context) {
 
 	// Validate request
 	if err := req.Validate(); err != nil {
-		log.Printf("❌ [BUS OWNER ROUTE] Validation failed: %v", err)
+		log.Printf("ERROR: [BUS OWNER ROUTE] Validation failed: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid UUID format", "details": err.Error()})
 		return
 	}
 
 	// Validate that all stops exist in the master route
-	log.Printf("🔍 [BUS OWNER ROUTE] Validating stops exist for master route: %s", req.MasterRouteID)
+	log.Printf("[BUS OWNER ROUTE] Validating stops exist for master route: %s", req.MasterRouteID)
 	stopsExist, err := h.routeRepo.ValidateStopsExist(req.MasterRouteID, req.SelectedStopIDs)
 	if err != nil {
-		log.Printf("❌ [BUS OWNER ROUTE] Stop validation error: %v", err)
+		log.Printf("ERROR: [BUS OWNER ROUTE] Stop validation error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to validate stops",
 			"details": err.Error(),
@@ -95,20 +95,20 @@ func (h *BusOwnerRouteHandler) CreateRoute(c *gin.Context) {
 	}
 
 	if !stopsExist {
-		log.Printf("⚠️ [BUS OWNER ROUTE] Some stops don't exist in master route")
+		log.Printf("WARNING: [BUS OWNER ROUTE] Some stops don't exist in master route")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "One or more selected stops do not exist in the master route",
 			"details": "Please ensure the master route has stops configured",
 		})
 		return
 	}
-	log.Printf("✅ [BUS OWNER ROUTE] All stops validated successfully")
+	log.Printf("[BUS OWNER ROUTE] All stops validated successfully")
 
 	// Validate that first and last stops are included
-	log.Printf("🔍 [BUS OWNER ROUTE] Validating first and last stops")
+	log.Printf("[BUS OWNER ROUTE] Validating first and last stops")
 	hasFirstAndLast, err := h.routeRepo.ValidateFirstAndLastStops(req.MasterRouteID, req.SelectedStopIDs)
 	if err != nil {
-		log.Printf("❌ [BUS OWNER ROUTE] First/last stop validation error: %v", err)
+		log.Printf("ERROR: [BUS OWNER ROUTE] First/last stop validation error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to validate first and last stops",
 			"details": err.Error(),
@@ -117,19 +117,19 @@ func (h *BusOwnerRouteHandler) CreateRoute(c *gin.Context) {
 	}
 
 	if !hasFirstAndLast {
-		log.Printf("⚠️ [BUS OWNER ROUTE] First or last stop missing")
+		log.Printf("WARNING: [BUS OWNER ROUTE] First or last stop missing")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "First and last stops of the route must be included",
 			"details": "The origin and destination stops are required",
 		})
 		return
 	}
-	log.Printf("✅ [BUS OWNER ROUTE] First and last stops validated successfully")
+	log.Printf("[BUS OWNER ROUTE] First and last stops validated successfully")
 
 	// TODO: Verify that user owns a permit for this master route
 
 	// Create route
-	log.Printf("💾 [BUS OWNER ROUTE] Creating route in database...")
+	log.Printf(" [BUS OWNER ROUTE] Creating route in database...")
 	route := &models.BusOwnerRoute{
 		ID:              uuid.New().String(),
 		BusOwnerID:      busOwner.ID, // Use bus_owners.id, not users.id
@@ -140,7 +140,7 @@ func (h *BusOwnerRouteHandler) CreateRoute(c *gin.Context) {
 	}
 
 	if err := h.routeRepo.Create(route); err != nil {
-		log.Printf("❌ [BUS OWNER ROUTE] Failed to create route: %v", err)
+		log.Printf("ERROR: [BUS OWNER ROUTE] Failed to create route: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to create route",
 			"details": err.Error(),
@@ -148,7 +148,7 @@ func (h *BusOwnerRouteHandler) CreateRoute(c *gin.Context) {
 		return
 	}
 
-	log.Printf("✅ [BUS OWNER ROUTE] Route created successfully: %s", route.ID)
+	log.Printf("[BUS OWNER ROUTE] Route created successfully: %s", route.ID)
 	c.JSON(http.StatusCreated, route)
 }
 

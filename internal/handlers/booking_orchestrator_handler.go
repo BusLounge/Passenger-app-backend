@@ -860,7 +860,7 @@ func (h *BookingOrchestratorHandler) PaymentReturn(c *gin.Context) {
 </head>
 <body>
     <div class="container">
-        <div class="success">✓</div>
+        <div class="success"></div>
         <h1>Payment Complete</h1>
         <p>Your payment has been processed successfully.</p>
         <p>You can close this window and return to the app.</p>

@@ -180,7 +180,7 @@ func (h *AuthHandler) SendOTP(c *gin.Context) {
 	if h.config.SMS.Mode == "production" {
 		// Validate SMS configuration
 		if h.config.SMS.Method == "url" && h.config.SMS.ESMSQK == "" {
-			log.Printf("❌ ERROR: SMS API key (DIALOG_SMS_ESMSQK) is not configured")
+			log.Printf("ERROR: ERROR: SMS API key (DIALOG_SMS_ESMSQK) is not configured")
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "sms_not_configured",
 				"message": "SMS gateway is not properly configured. Please contact support.",
@@ -190,7 +190,7 @@ func (h *AuthHandler) SendOTP(c *gin.Context) {
 		}
 
 		if h.config.SMS.Mask == "" {
-			log.Printf("❌ ERROR: SMS Mask (DIALOG_SMS_MASK) is not configured")
+			log.Printf("ERROR: ERROR: SMS Mask (DIALOG_SMS_MASK) is not configured")
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "sms_not_configured",
 				"message": "SMS gateway is not properly configured. Please contact support.",
@@ -203,18 +203,18 @@ func (h *AuthHandler) SendOTP(c *gin.Context) {
 	// Send SMS based on mode
 	if h.config.SMS.Mode == "production" {
 		// Production mode: Send actual SMS via Dialog gateway
-		log.Printf("🔵 Attempting to send SMS to %s via Dialog gateway (App: %s)...", phone, req.AppType)
-		log.Printf("📝 SMS Method: %s", h.config.SMS.Method)
+		log.Printf(" Attempting to send SMS to %s via Dialog gateway (App: %s)...", phone, req.AppType)
+		log.Printf(" SMS Method: %s", h.config.SMS.Method)
 		if h.config.SMS.Method == "url" {
-			log.Printf("📝 Using API Key: %s****", h.config.SMS.ESMSQK[:3])
+			log.Printf(" Using API Key: %s****", h.config.SMS.ESMSQK[:3])
 		}
-		log.Printf("📝 SMS Mask: %s", h.config.SMS.Mask)
+		log.Printf(" SMS Mask: %s", h.config.SMS.Mask)
 
 		transactionID, err := h.smsGateway.SendOTP(phone, otp, req.AppType)
 		if err != nil {
-			log.Printf("❌ ERROR: Failed to send SMS to %s: %v", phone, err)
-			log.Printf("❌ Error type: %T", err)
-			log.Printf("❌ Full error details: %+v", err)
+			log.Printf("ERROR: ERROR: Failed to send SMS to %s: %v", phone, err)
+			log.Printf("ERROR: Error type: %T", err)
+			log.Printf("ERROR: Full error details: %+v", err)
 			errorMsg := fmt.Sprintf("Failed to send OTP: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "sms_send_failed",
@@ -224,7 +224,7 @@ func (h *AuthHandler) SendOTP(c *gin.Context) {
 			return
 		}
 
-		log.Printf("✅ SMS sent successfully to %s, transaction_id: %d", phone, transactionID)
+		log.Printf("SMS sent successfully to %s, transaction_id: %d", phone, transactionID)
 
 		// Production response (without OTP)
 		c.JSON(http.StatusOK, gin.H{
@@ -1441,7 +1441,7 @@ type RefreshTokenResponse struct {
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("❌ REFRESH TOKEN ERROR: Invalid request body - %v", err)
+		log.Printf("ERROR: REFRESH TOKEN ERROR: Invalid request body - %v", err)
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_request",
 			Message: "Invalid request body",
@@ -1449,13 +1449,13 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	log.Printf("🔄 REFRESH TOKEN REQUEST: Token length: %d, DeviceID: %s, DeviceType: %s",
+	log.Printf(" REFRESH TOKEN REQUEST: Token length: %d, DeviceID: %s, DeviceType: %s",
 		len(req.RefreshToken), req.DeviceID, req.DeviceType)
 
 	// Validate refresh token
 	claims, err := h.jwtService.ValidateRefreshToken(req.RefreshToken)
 	if err != nil {
-		log.Printf("❌ REFRESH TOKEN ERROR: Token validation failed - %v", err)
+		log.Printf("ERROR: REFRESH TOKEN ERROR: Token validation failed - %v", err)
 		c.JSON(http.StatusUnauthorized, ErrorResponse{
 			Error:   "invalid_token",
 			Message: "Invalid or expired refresh token",
@@ -1463,16 +1463,16 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	log.Printf("✅ REFRESH TOKEN: Token validated successfully for user: %s, phone: %s",
+	log.Printf("REFRESH TOKEN: Token validated successfully for user: %s, phone: %s",
 		claims.UserID, claims.Phone)
 
-	log.Printf("✅ REFRESH TOKEN: Token validated successfully for user: %s, phone: %s",
+	log.Printf("REFRESH TOKEN: Token validated successfully for user: %s, phone: %s",
 		claims.UserID, claims.Phone)
 
 	// Check if token is revoked in database
 	revoked, err := h.refreshTokenRepository.IsTokenRevoked(req.RefreshToken)
 	if err != nil {
-		log.Printf("❌ REFRESH TOKEN ERROR: Failed to check if token is revoked - %v", err)
+		log.Printf("ERROR: REFRESH TOKEN ERROR: Failed to check if token is revoked - %v", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "token_check_failed",
 			Message: "Failed to verify token status",
@@ -1481,7 +1481,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	if revoked {
-		log.Printf("❌ REFRESH TOKEN ERROR: Token has been revoked for user: %s", claims.UserID)
+		log.Printf("ERROR: REFRESH TOKEN ERROR: Token has been revoked for user: %s", claims.UserID)
 		c.JSON(http.StatusUnauthorized, ErrorResponse{
 			Error:   "token_revoked",
 			Message: "Refresh token has been revoked",
@@ -1489,12 +1489,12 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	log.Printf("✅ REFRESH TOKEN: Token is not revoked, fetching user: %s", claims.UserID)
+	log.Printf("REFRESH TOKEN: Token is not revoked, fetching user: %s", claims.UserID)
 
 	// Get user from database to ensure they still exist and get current profile status
 	user, err := h.userRepository.GetUserByID(claims.UserID)
 	if err != nil {
-		log.Printf("❌ REFRESH TOKEN ERROR: Failed to fetch user %s - %v", claims.UserID, err)
+		log.Printf("ERROR: REFRESH TOKEN ERROR: Failed to fetch user %s - %v", claims.UserID, err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "user_fetch_failed",
 			Message: "Failed to fetch user information",
@@ -1503,7 +1503,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	if user == nil {
-		log.Printf("❌ REFRESH TOKEN ERROR: User %s no longer exists", claims.UserID)
+		log.Printf("ERROR: REFRESH TOKEN ERROR: User %s no longer exists", claims.UserID)
 		c.JSON(http.StatusUnauthorized, ErrorResponse{
 			Error:   "user_not_found",
 			Message: "User no longer exists",
@@ -1511,11 +1511,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	log.Printf("✅ REFRESH TOKEN: User found - ID: %s, Status: %s", user.ID, user.Status)
+	log.Printf("REFRESH TOKEN: User found - ID: %s, Status: %s", user.ID, user.Status)
 
 	// Check if user is active
 	if user.Status != "active" {
-		log.Printf("❌ REFRESH TOKEN ERROR: User %s is not active, status: %s", user.ID, user.Status)
+		log.Printf("ERROR: REFRESH TOKEN ERROR: User %s is not active, status: %s", user.ID, user.Status)
 		c.JSON(http.StatusForbidden, ErrorResponse{
 			Error:   "user_inactive",
 			Message: "User account is not active",
@@ -1579,17 +1579,17 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	// ✅ IMPORTANT: Revoke old token AFTER successfully storing new one (token rotation)
+	// IMPORTANT: Revoke old token AFTER successfully storing new one (token rotation)
 	// This prevents race conditions where concurrent requests might fail
 	if err := h.refreshTokenRepository.RevokeToken(req.RefreshToken); err != nil {
 		// Log error but don't fail the request - new tokens are already issued
-		log.Printf("⚠️ REFRESH TOKEN WARNING: Failed to revoke old token (non-critical): %v", err)
+		log.Printf("WARNING: REFRESH TOKEN WARNING: Failed to revoke old token (non-critical): %v", err)
 	}
 
 	// Log successful token refresh
 	h.auditService.LogTokenRefresh(user.ID, clientIP, userAgent, true)
 
-	log.Printf("✅ REFRESH TOKEN SUCCESS: New tokens generated for user: %s", user.ID)
+	log.Printf("REFRESH TOKEN SUCCESS: New tokens generated for user: %s", user.ID)
 
 	c.JSON(http.StatusOK, RefreshTokenResponse{
 		AccessToken:  accessToken,

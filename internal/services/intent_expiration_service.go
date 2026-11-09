@@ -31,13 +31,13 @@ func NewIntentExpirationService(
 
 // Start begins the background expiration job
 func (s *IntentExpirationService) Start() {
-	s.logger.Info("🕐 Starting Intent Expiration Service (checking every minute)")
+	s.logger.Info("Starting Intent Expiration Service (checking every minute)")
 	go s.run()
 }
 
 // Stop stops the background expiration job
 func (s *IntentExpirationService) Stop() {
-	s.logger.Info("🛑 Stopping Intent Expiration Service")
+	s.logger.Info("Stopping Intent Expiration Service")
 	close(s.stopCh)
 }
 

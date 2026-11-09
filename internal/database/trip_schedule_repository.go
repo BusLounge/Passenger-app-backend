@@ -145,7 +145,7 @@ func (r *TripScheduleRepository) GetByID(scheduleID string) (*models.TripSchedul
 
 // GetByBusOwnerID retrieves all trip schedules for a bus owner
 func (r *TripScheduleRepository) GetByBusOwnerID(busOwnerID string) ([]models.TripSchedule, error) {
-	fmt.Printf("🔍 REPO GetByBusOwnerID: Querying for bus_owner_id=%s\n", busOwnerID)
+	fmt.Printf("REPO GetByBusOwnerID: Querying for bus_owner_id=%s\n", busOwnerID)
 
 	query := `
 		SELECT id, bus_owner_id, bus_owner_route_id, schedule_name,
@@ -159,22 +159,22 @@ func (r *TripScheduleRepository) GetByBusOwnerID(busOwnerID string) ([]models.Tr
 		ORDER BY departure_time
 	`
 
-	fmt.Printf("📝 REPO: Executing query...\n")
+	fmt.Printf(" REPO: Executing query...\n")
 	rows, err := r.db.Query(query, busOwnerID)
 	if err != nil {
-		fmt.Printf("❌ REPO: Query execution failed: %v\n", err)
+		fmt.Printf("ERROR: REPO: Query execution failed: %v\n", err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	fmt.Printf("✅ REPO: Query executed, starting to scan rows...\n")
+	fmt.Printf("REPO: Query executed, starting to scan rows...\n")
 	schedules, scanErr := r.scanSchedules(rows)
 	if scanErr != nil {
-		fmt.Printf("❌ REPO: Scan failed: %v\n", scanErr)
+		fmt.Printf("ERROR: REPO: Scan failed: %v\n", scanErr)
 		return nil, scanErr
 	}
 
-	fmt.Printf("✅ REPO: Successfully scanned %d schedules\n", len(schedules))
+	fmt.Printf("REPO: Successfully scanned %d schedules\n", len(schedules))
 	return schedules, nil
 }
 
@@ -303,7 +303,7 @@ func (r *TripScheduleRepository) scanSchedules(rows *sql.Rows) ([]models.TripSch
 
 	for rows.Next() {
 		rowNum++
-		fmt.Printf("📋 REPO scanSchedules: Processing row #%d\n", rowNum)
+		fmt.Printf(" REPO scanSchedules: Processing row #%d\n", rowNum)
 
 		var schedule models.TripSchedule
 		var busOwnerRouteID sql.NullString
@@ -318,7 +318,7 @@ func (r *TripScheduleRepository) scanSchedules(rows *sql.Rows) ([]models.TripSch
 		var recurrenceDaysStr sql.NullString
 		var specificDatesStr sql.NullString
 
-		fmt.Printf("🔍 REPO: About to scan row #%d with columns: id, bus_owner_id, bus_owner_route_id, schedule_name, recurrence_type, recurrence_days...\n", rowNum)
+		fmt.Printf("REPO: About to scan row #%d with columns: id, bus_owner_id, bus_owner_route_id, schedule_name, recurrence_type, recurrence_days...\n", rowNum)
 
 		// Must match the SELECT order from GetByBusOwnerID:
 		// id, bus_owner_id, bus_owner_route_id, schedule_name,
@@ -337,7 +337,7 @@ func (r *TripScheduleRepository) scanSchedules(rows *sql.Rows) ([]models.TripSch
 		)
 
 		if err != nil {
-			fmt.Printf("❌ REPO: Scan FAILED on row #%d: %v\n", rowNum, err)
+			fmt.Printf("ERROR: REPO: Scan FAILED on row #%d: %v\n", rowNum, err)
 			fmt.Printf("   Schedule ID (if scanned): %s\n", schedule.ID)
 			return nil, err
 		}
@@ -359,7 +359,7 @@ func (r *TripScheduleRepository) scanSchedules(rows *sql.Rows) ([]models.TripSch
 		if schedule.SpecificDates != nil {
 			specificDatesDisplay = *schedule.SpecificDates
 		}
-		fmt.Printf("✅ REPO: Row #%d scanned successfully - ID=%s, RecurrenceDays=%s, SpecificDates=%s\n",
+		fmt.Printf("REPO: Row #%d scanned successfully - ID=%s, RecurrenceDays=%s, SpecificDates=%s\n",
 			rowNum, schedule.ID, schedule.RecurrenceDays, specificDatesDisplay)
 
 		// Convert sql.Null* types

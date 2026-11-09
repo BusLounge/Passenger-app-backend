@@ -85,11 +85,11 @@ func (r *ScheduledTripRepository) GetByScheduleAndDate(scheduleID string, date t
 
 // GetByScheduleIDsAndDateRange retrieves trips for specific schedule IDs within a date range
 func (r *ScheduledTripRepository) GetByScheduleIDsAndDateRange(scheduleIDs []string, startDate, endDate time.Time) ([]models.ScheduledTrip, error) {
-	fmt.Printf("🔍 REPO: GetByScheduleIDsAndDateRange called with %d schedule IDs, dates: %s to %s\n",
+	fmt.Printf("REPO: GetByScheduleIDsAndDateRange called with %d schedule IDs, dates: %s to %s\n",
 		len(scheduleIDs), startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 
 	if len(scheduleIDs) == 0 {
-		fmt.Println("⚠️  REPO: No schedule IDs provided, returning empty array")
+		fmt.Println("WARNING: REPO: No schedule IDs provided, returning empty array")
 		return []models.ScheduledTrip{}, nil
 	}
 
@@ -112,35 +112,35 @@ func (r *ScheduledTripRepository) GetByScheduleIDsAndDateRange(scheduleIDs []str
 		ORDER BY departure_datetime
 	`, strings.Join(placeholders, ", "))
 
-	fmt.Printf("📝 REPO: Executing SQL query:\n%s\n", query)
-	fmt.Printf("📝 REPO: Query args: $1=%s, $2=%s, schedule_ids=%v\n",
+	fmt.Printf(" REPO: Executing SQL query:\n%s\n", query)
+	fmt.Printf(" REPO: Query args: $1=%s, $2=%s, schedule_ids=%v\n",
 		startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), scheduleIDs)
 
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
-		fmt.Printf("❌ REPO: SQL query error: %v\n", err)
+		fmt.Printf("ERROR: REPO: SQL query error: %v\n", err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	fmt.Println("✅ REPO: SQL query executed successfully, scanning results...")
+	fmt.Println("REPO: SQL query executed successfully, scanning results...")
 	trips, scanErr := r.scanTrips(rows)
 	if scanErr != nil {
-		fmt.Printf("❌ REPO: Error scanning trips: %v\n", scanErr)
+		fmt.Printf("ERROR: REPO: Error scanning trips: %v\n", scanErr)
 		return nil, scanErr
 	}
 
-	fmt.Printf("✅ REPO: Successfully scanned %d trips from database\n", len(trips))
+	fmt.Printf("REPO: Successfully scanned %d trips from database\n", len(trips))
 	return trips, nil
 }
 
 // GetByScheduleIDsAndDateRangeWithRouteInfo retrieves trips with route information for specific schedule IDs within a date range
 func (r *ScheduledTripRepository) GetByScheduleIDsAndDateRangeWithRouteInfo(scheduleIDs []string, startDate, endDate time.Time) ([]models.ScheduledTripWithRouteInfo, error) {
-	fmt.Printf("🔍 REPO: GetByScheduleIDsAndDateRangeWithRouteInfo called with %d schedule IDs, dates: %s to %s\n",
+	fmt.Printf("REPO: GetByScheduleIDsAndDateRangeWithRouteInfo called with %d schedule IDs, dates: %s to %s\n",
 		len(scheduleIDs), startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 
 	if len(scheduleIDs) == 0 {
-		fmt.Println("⚠️  REPO: No schedule IDs provided, returning empty array")
+		fmt.Println("WARNING: REPO: No schedule IDs provided, returning empty array")
 		return []models.ScheduledTripWithRouteInfo{}, nil
 	}
 
@@ -169,31 +169,31 @@ func (r *ScheduledTripRepository) GetByScheduleIDsAndDateRangeWithRouteInfo(sche
 		ORDER BY st.departure_datetime
 	`, strings.Join(placeholders, ", "))
 
-	fmt.Printf("📝 REPO: Executing SQL query with route info:\n%s\n", query)
-	fmt.Printf("📝 REPO: Query args: $1=%s, $2=%s, schedule_ids=%v\n",
+	fmt.Printf(" REPO: Executing SQL query with route info:\n%s\n", query)
+	fmt.Printf(" REPO: Query args: $1=%s, $2=%s, schedule_ids=%v\n",
 		startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), scheduleIDs)
 
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
-		fmt.Printf("❌ REPO: SQL query error: %v\n", err)
+		fmt.Printf("ERROR: REPO: SQL query error: %v\n", err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	fmt.Println("✅ REPO: SQL query executed successfully, scanning results with route info...")
+	fmt.Println("REPO: SQL query executed successfully, scanning results with route info...")
 	trips, scanErr := r.scanTripsWithRouteInfo(rows)
 	if scanErr != nil {
-		fmt.Printf("❌ REPO: Error scanning trips with route info: %v\n", scanErr)
+		fmt.Printf("ERROR: REPO: Error scanning trips with route info: %v\n", scanErr)
 		return nil, scanErr
 	}
 
-	fmt.Printf("✅ REPO: Successfully scanned %d trips with route info from database\n", len(trips))
+	fmt.Printf("REPO: Successfully scanned %d trips with route info from database\n", len(trips))
 	return trips, nil
 }
 
 // GetSpecialTripsByBusOwnerAndDateRange retrieves special trips (trip_schedule_id IS NULL) for a bus owner within a date range
 func (r *ScheduledTripRepository) GetSpecialTripsByBusOwnerAndDateRange(busOwnerID string, startDate, endDate time.Time) ([]models.ScheduledTripWithRouteInfo, error) {
-	fmt.Printf("🔍 REPO: GetSpecialTripsByBusOwnerAndDateRange called for bus_owner=%s, dates: %s to %s\n",
+	fmt.Printf("REPO: GetSpecialTripsByBusOwnerAndDateRange called for bus_owner=%s, dates: %s to %s\n",
 		busOwnerID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 
 	query := `
@@ -213,23 +213,23 @@ func (r *ScheduledTripRepository) GetSpecialTripsByBusOwnerAndDateRange(busOwner
 		ORDER BY st.departure_datetime
 	`
 
-	fmt.Printf("📝 REPO: Executing SQL query for special trips\n")
+	fmt.Printf(" REPO: Executing SQL query for special trips\n")
 
 	rows, err := r.db.Query(query, busOwnerID, startDate, endDate)
 	if err != nil {
-		fmt.Printf("❌ REPO: SQL query error: %v\n", err)
+		fmt.Printf("ERROR: REPO: SQL query error: %v\n", err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	fmt.Println("✅ REPO: SQL query executed successfully, scanning special trips...")
+	fmt.Println("REPO: SQL query executed successfully, scanning special trips...")
 	trips, scanErr := r.scanTripsWithRouteInfo(rows)
 	if scanErr != nil {
-		fmt.Printf("❌ REPO: Error scanning special trips: %v\n", scanErr)
+		fmt.Printf("ERROR: REPO: Error scanning special trips: %v\n", scanErr)
 		return nil, scanErr
 	}
 
-	fmt.Printf("✅ REPO: Successfully scanned %d special trips from database\n", len(trips))
+	fmt.Printf("REPO: Successfully scanned %d special trips from database\n", len(trips))
 	return trips, nil
 }
 

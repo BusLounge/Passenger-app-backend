@@ -208,8 +208,8 @@ func (h *LoungeHandler) AddLounge(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"message":           "Lounge added successfully",
 		"lounge_id":         lounge.ID,
-		"registration_step": models.RegStepCompleted, // ✅ Now 'completed' instead of 'lounge_added'
-		"profile_completed": true,                    // ✅ Explicitly return this
+		"registration_step": models.RegStepCompleted, // Now 'completed' instead of 'lounge_added'
+		"profile_completed": true,                    // Explicitly return this
 		"status":            lounge.Status,
 	})
 }

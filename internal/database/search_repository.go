@@ -496,7 +496,7 @@ func (r *SearchRepository) FindDirectTrips(
 	limit int,
 ) ([]models.TripResult, error) {
 	// Log search parameters
-	fmt.Printf("\n🔍 === SEARCH QUERY DEBUG ===\n")
+	fmt.Printf("\n=== SEARCH QUERY DEBUG ===\n")
 	fmt.Printf("FROM Stop ID: %s\n", fromStopID.String())
 	fmt.Printf("TO Stop ID: %s\n", toStopID.String())
 	fmt.Printf("After Time: %s\n", afterTime.Format(time.RFC3339))
@@ -520,7 +520,7 @@ func (r *SearchRepository) FindDirectTrips(
 		FROM scheduled_trips
 	`
 	if err := r.db.Get(&debugCounts, debugQuery, afterTime); err == nil {
-		fmt.Printf("📊 Scheduled Trips Stats:\n")
+		fmt.Printf("Scheduled Trips Stats:\n")
 		fmt.Printf("   Total: %d | Bookable: %d | Future: %d | Valid Status: %d | With Custom Route: %d\n",
 			debugCounts.TotalTrips, debugCounts.BookableTrips, debugCounts.FutureTrips,
 			debugCounts.ValidStatus, debugCounts.WithBORRoute)
@@ -634,15 +634,15 @@ func (r *SearchRepository) FindDirectTrips(
 	var tempTrips []tripWithFeatures
 	err := r.db.Select(&tempTrips, query, fromStopID, toStopID, afterTime, limit)
 	if err != nil {
-		fmt.Printf("❌ SQL Query Error: %v\n", err)
+		fmt.Printf("ERROR: SQL Query Error: %v\n", err)
 		return nil, fmt.Errorf("error finding trips: %w", err)
 	}
 
-	fmt.Printf("✅ SQL Query successful - Found %d trips\n", len(tempTrips))
+	fmt.Printf("SQL Query successful - Found %d trips\n", len(tempTrips))
 
 	// If no trips found, run diagnostic query to see why
 	if len(tempTrips) == 0 {
-		fmt.Printf("\n⚠️  NO TRIPS FOUND - Running diagnostics...\n")
+		fmt.Printf("\nWARNING: NO TRIPS FOUND - Running diagnostics...\n")
 
 		type diagnostic struct {
 			TripID             uuid.UUID `db:"trip_id"`
@@ -693,30 +693,30 @@ func (r *SearchRepository) FindDirectTrips(
 			for _, d := range diags {
 				reasons := []string{}
 				if !d.IsBookable {
-					reasons = append(reasons, "❌ NOT BOOKABLE")
+					reasons = append(reasons, "ERROR: NOT BOOKABLE")
 				}
 				if d.Status != "scheduled" && d.Status != "confirmed" {
-					reasons = append(reasons, fmt.Sprintf("❌ WRONG STATUS: %s", d.Status))
+					reasons = append(reasons, fmt.Sprintf("ERROR: WRONG STATUS: %s", d.Status))
 				}
 				if !d.IsFuture {
-					reasons = append(reasons, "❌ PAST DEPARTURE")
+					reasons = append(reasons, "ERROR: PAST DEPARTURE")
 				}
 				// Check selected_stop_ids for custom routes
 				if d.HasBORRoute {
 					if d.SelectedStopsCount == nil || *d.SelectedStopsCount == 0 {
-						reasons = append(reasons, "⚠️  selected_stop_ids is NULL/empty (now allowed)")
+						reasons = append(reasons, "WARNING: selected_stop_ids is NULL/empty (now allowed)")
 					} else if d.FromInSelected != nil && !*d.FromInSelected {
-						reasons = append(reasons, "❌ FROM STOP NOT IN selected_stop_ids")
+						reasons = append(reasons, "ERROR: FROM STOP NOT IN selected_stop_ids")
 					} else if d.ToInSelected != nil && !*d.ToInSelected {
-						reasons = append(reasons, "❌ TO STOP NOT IN selected_stop_ids")
+						reasons = append(reasons, "ERROR: TO STOP NOT IN selected_stop_ids")
 					}
 				}
 				if !d.StopsConnected {
-					reasons = append(reasons, "❌ STOPS NOT ON SAME ROUTE OR WRONG ORDER")
+					reasons = append(reasons, "ERROR: STOPS NOT ON SAME ROUTE OR WRONG ORDER")
 				}
 
 				if len(reasons) == 0 {
-					reasons = append(reasons, "✅ Should have matched!")
+					reasons = append(reasons, "Should have matched!")
 				}
 
 				fmt.Printf("   Trip %s: %s | %s\n",
@@ -2360,7 +2360,7 @@ LIMIT $7;
 			DepartureTime:    row.L1Dep,
 			EstimatedArrival: row.L2Arr,
 			DurationMinutes:  duration,
-			RouteName:        fmt.Sprintf("%s ➔ %s", row.L1RouteName, row.L2RouteName),
+			RouteName:        fmt.Sprintf("%s  %s", row.L1RouteName, row.L2RouteName),
 			BusType:          row.L1BusType,
 			IsBookable:       true,
 			TotalSeats:       40, // Default for now

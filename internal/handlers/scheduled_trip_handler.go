@@ -71,63 +71,63 @@ func (h *ScheduledTripHandler) GetTripsByDateRange(c *gin.Context) {
 
 	userCtx, exists := middleware.GetUserContext(c)
 	if !exists {
-		fmt.Println("❌ ERROR: No user context found")
+		fmt.Println("ERROR: ERROR: No user context found")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	fmt.Printf("✅ STEP 1: Got user context - user_id=%s\n", userCtx.UserID.String())
+	fmt.Printf("STEP 1: Got user context - user_id=%s\n", userCtx.UserID.String())
 
 	busOwner, err := h.busOwnerRepo.GetByUserID(userCtx.UserID.String())
 	if err != nil {
 		if err == sql.ErrNoRows {
-			fmt.Printf("❌ ERROR: Bus owner profile not found for user_id=%s\n", userCtx.UserID.String())
+			fmt.Printf("ERROR: ERROR: Bus owner profile not found for user_id=%s\n", userCtx.UserID.String())
 			c.JSON(http.StatusNotFound, gin.H{"error": "Bus owner profile not found"})
 			return
 		}
-		fmt.Printf("❌ ERROR: Failed to fetch bus owner: %v\n", err)
+		fmt.Printf("ERROR: ERROR: Failed to fetch bus owner: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch profile"})
 		return
 	}
 
-	fmt.Printf("✅ STEP 2: Got bus owner - bus_owner_id=%s\n", busOwner.ID)
+	fmt.Printf("STEP 2: Got bus owner - bus_owner_id=%s\n", busOwner.ID)
 
 	// Parse query parameters
 	startDateStr := c.Query("start_date")
 	endDateStr := c.Query("end_date")
 
 	if startDateStr == "" || endDateStr == "" {
-		fmt.Println("❌ ERROR: Missing start_date or end_date")
+		fmt.Println("ERROR: ERROR: Missing start_date or end_date")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "start_date and end_date are required"})
 		return
 	}
 
 	startDate, err := time.Parse("2006-01-02", startDateStr)
 	if err != nil {
-		fmt.Printf("❌ ERROR: Invalid start_date format: %s\n", startDateStr)
+		fmt.Printf("ERROR: ERROR: Invalid start_date format: %s\n", startDateStr)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start_date format. Use YYYY-MM-DD"})
 		return
 	}
 
 	endDate, err := time.Parse("2006-01-02", endDateStr)
 	if err != nil {
-		fmt.Printf("❌ ERROR: Invalid end_date format: %s\n", endDateStr)
+		fmt.Printf("ERROR: ERROR: Invalid end_date format: %s\n", endDateStr)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end_date format. Use YYYY-MM-DD"})
 		return
 	}
 
-	fmt.Printf("✅ STEP 3: Parsed date range - from %s to %s\n", startDateStr, endDateStr)
+	fmt.Printf("STEP 3: Parsed date range - from %s to %s\n", startDateStr, endDateStr)
 
 	// Get all trip schedules (timetables) for this bus owner
-	fmt.Printf("🔍 STEP 4: Querying trip_schedules WHERE bus_owner_id=%s\n", busOwner.ID)
+	fmt.Printf("STEP 4: Querying trip_schedules WHERE bus_owner_id=%s\n", busOwner.ID)
 	ownerSchedules, err := h.scheduleRepo.GetByBusOwnerID(busOwner.ID)
 	if err != nil {
-		fmt.Printf("❌ ERROR: Failed to fetch schedules: %v\n", err)
+		fmt.Printf("ERROR: ERROR: Failed to fetch schedules: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch schedules"})
 		return
 	}
 
-	fmt.Printf("✅ STEP 4 RESULT: Found %d schedules in trip_schedules table\n", len(ownerSchedules))
+	fmt.Printf("STEP 4 RESULT: Found %d schedules in trip_schedules table\n", len(ownerSchedules))
 
 	// Extract schedule IDs
 	scheduleIDs := make([]string, len(ownerSchedules))
@@ -136,39 +136,39 @@ func (h *ScheduledTripHandler) GetTripsByDateRange(c *gin.Context) {
 		fmt.Printf("   - Schedule[%d]: id=%s, name=%v\n", i+1, schedule.ID, schedule.ScheduleName)
 	}
 
-	fmt.Printf("✅ STEP 5: Extracted %d schedule IDs\n", len(scheduleIDs))
+	fmt.Printf("STEP 5: Extracted %d schedule IDs\n", len(scheduleIDs))
 
 	// MODIFIED: Get trips from schedules AND special trips (trip_schedule_id IS NULL)
 	var ownerTrips []models.ScheduledTripWithRouteInfo
 
 	// Get trips from timetables/schedules
 	if len(scheduleIDs) > 0 {
-		fmt.Printf("🔍 STEP 6A: Querying scheduled_trips WHERE trip_schedule_id IN (%d IDs) AND date BETWEEN %s AND %s\n",
+		fmt.Printf("STEP 6A: Querying scheduled_trips WHERE trip_schedule_id IN (%d IDs) AND date BETWEEN %s AND %s\n",
 			len(scheduleIDs), startDateStr, endDateStr)
 		scheduleTrips, err := h.tripRepo.GetByScheduleIDsAndDateRangeWithRouteInfo(scheduleIDs, startDate, endDate)
 		if err != nil {
-			fmt.Printf("❌ ERROR: Failed to fetch schedule trips: %v\n", err)
+			fmt.Printf("ERROR: ERROR: Failed to fetch schedule trips: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch trips"})
 			return
 		}
 		ownerTrips = append(ownerTrips, scheduleTrips...)
-		fmt.Printf("✅ STEP 6A RESULT: Found %d trips from schedules\n", len(scheduleTrips))
+		fmt.Printf("STEP 6A RESULT: Found %d trips from schedules\n", len(scheduleTrips))
 	}
 
 	// Get special trips (trip_schedule_id IS NULL and bus_owner_route_id belongs to this owner)
-	fmt.Printf("🔍 STEP 6B: Querying special trips WHERE trip_schedule_id IS NULL AND date BETWEEN %s AND %s\n",
+	fmt.Printf("STEP 6B: Querying special trips WHERE trip_schedule_id IS NULL AND date BETWEEN %s AND %s\n",
 		startDateStr, endDateStr)
 	specialTrips, err := h.tripRepo.GetSpecialTripsByBusOwnerAndDateRange(busOwner.ID, startDate, endDate)
 	if err != nil {
-		fmt.Printf("❌ ERROR: Failed to fetch special trips: %v\n", err)
+		fmt.Printf("ERROR: ERROR: Failed to fetch special trips: %v\n", err)
 		// Don't fail the request, just log the error
-		fmt.Println("⚠️  Continuing without special trips")
+		fmt.Println("WARNING: Continuing without special trips")
 	} else {
 		ownerTrips = append(ownerTrips, specialTrips...)
-		fmt.Printf("✅ STEP 6B RESULT: Found %d special trips\n", len(specialTrips))
+		fmt.Printf("STEP 6B RESULT: Found %d special trips\n", len(specialTrips))
 	}
 
-	fmt.Printf("✅ STEP 6 RESULT: Found %d total trips (%d from schedules + %d special)\n",
+	fmt.Printf("STEP 6 RESULT: Found %d total trips (%d from schedules + %d special)\n",
 		len(ownerTrips), len(ownerTrips)-len(specialTrips), len(specialTrips))
 	if len(ownerTrips) > 0 {
 		for i, trip := range ownerTrips {
@@ -1120,7 +1120,7 @@ func (h *ScheduledTripHandler) AssignStaffAndPermit(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 			return
 		}
-		log.Printf("[AssignStaffToTrip] Ownership verified via schedule ✓")
+		log.Printf("[AssignStaffToTrip] Ownership verified via schedule ")
 	}
 
 	// Verify ownership via bus owner route if present (and no schedule check done)
@@ -1141,7 +1141,7 @@ func (h *ScheduledTripHandler) AssignStaffAndPermit(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 			return
 		}
-		log.Printf("[AssignStaffToTrip] Ownership verified via route ✓")
+		log.Printf("[AssignStaffToTrip] Ownership verified via route ")
 	}
 
 	// Parse request
@@ -1254,14 +1254,14 @@ func (h *ScheduledTripHandler) AssignStaffAndPermit(c *gin.Context) {
 		// Verify permit is verified (approved by authorities)
 		log.Printf("[AssignStaffToTrip] Permit status check - Permit ID: %v, Status: %s", req.PermitID, permit.Status)
 		if permit.Status != models.VerificationVerified {
-			log.Printf("[AssignStaffToTrip] ❌ Permit status is '%s', expected 'verified'", permit.Status)
+			log.Printf("[AssignStaffToTrip] ERROR: Permit status is '%s', expected 'verified'", permit.Status)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "Permit must be verified before assignment",
 				"details": fmt.Sprintf("Current permit status: %s", permit.Status),
 			})
 			return
 		}
-		log.Printf("[AssignStaffToTrip] ✓ Permit is verified")
+		log.Printf("[AssignStaffToTrip] Permit is verified")
 
 		// Verify permit is valid on trip date
 		// Extract date from DepartureDatetime for comparison with permit dates
@@ -1359,7 +1359,7 @@ func (h *ScheduledTripHandler) AssignSeatLayout(c *gin.Context) {
 	}
 
 	tripID := c.Param("id")
-	fmt.Printf("📊 AssignSeatLayout called - Trip ID: %s, User ID: %s, Bus Owner ID: %s\n",
+	fmt.Printf("AssignSeatLayout called - Trip ID: %s, User ID: %s, Bus Owner ID: %s\n",
 		tripID, userCtx.UserID.String(), busOwner.ID)
 
 	// Parse request body
@@ -1372,22 +1372,22 @@ func (h *ScheduledTripHandler) AssignSeatLayout(c *gin.Context) {
 		return
 	}
 
-	fmt.Printf("📊 Seat Layout ID to assign: %s\n", *req.SeatLayoutID)
+	fmt.Printf("Seat Layout ID to assign: %s\n", *req.SeatLayoutID)
 
 	// Get the trip
 	trip, err := h.tripRepo.GetByID(tripID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			fmt.Printf("❌ Trip not found in database: %s\n", tripID)
+			fmt.Printf("ERROR: Trip not found in database: %s\n", tripID)
 			c.JSON(http.StatusNotFound, gin.H{"error": "Trip not found", "trip_id": tripID})
 			return
 		}
-		fmt.Printf("❌ Database error fetching trip: %v\n", err)
+		fmt.Printf("ERROR: Database error fetching trip: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch trip"})
 		return
 	}
 
-	fmt.Printf("✅ Trip found: %s, Schedule ID: %v, Route ID: %v\n", trip.ID, trip.TripScheduleID, trip.BusOwnerRouteID)
+	fmt.Printf("Trip found: %s, Schedule ID: %v, Route ID: %v\n", trip.ID, trip.TripScheduleID, trip.BusOwnerRouteID)
 
 	// Verify ownership - either through trip_schedule or bus_owner_route (for special trips)
 	var ownerVerified bool
@@ -1439,7 +1439,7 @@ func (h *ScheduledTripHandler) AssignSeatLayout(c *gin.Context) {
 	if req.SeatLayoutID != nil && *req.SeatLayoutID != "" {
 		seatsCreated, err = h.tripSeatRepo.CreateTripSeatsFromLayout(tripID, *req.SeatLayoutID, trip.BaseFare)
 		if err != nil {
-			fmt.Printf("❌ Failed to create trip seats: %v\n", err)
+			fmt.Printf("ERROR: Failed to create trip seats: %v\n", err)
 			// Rollback the seat layout assignment since seats couldn't be created
 			h.tripRepo.AssignSeatLayout(tripID, nil)
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -1449,7 +1449,7 @@ func (h *ScheduledTripHandler) AssignSeatLayout(c *gin.Context) {
 			})
 			return
 		}
-		fmt.Printf("✅ Created %d trip seats from layout %s\n", seatsCreated, *req.SeatLayoutID)
+		fmt.Printf("Created %d trip seats from layout %s\n", seatsCreated, *req.SeatLayoutID)
 	}
 
 	// Verify seats were actually created
