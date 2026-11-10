@@ -1138,7 +1138,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 			}
 
 			// Create transport booking if requested
-			if err := s.createTransportBookingFromIntent(intent, intent.GetPreTripLoungeIntent(), masterBookingID, "user_to_lounge"); err != nil {
+			if err := s.createTransportBookingFromIntent(intent, intent.GetPreTripLoungeIntent(), masterBookingID, "pre_trip"); err != nil {
 				s.logger.WithError(err).Error("Failed to create transport booking for pre-trip lounge")
 			}
 		}
@@ -1166,7 +1166,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 			}
 
 			// Create transport booking if requested
-			if err := s.createTransportBookingFromIntent(intent, intent.GetTransitLoungeIntent(), masterBookingID, "user_to_lounge"); err != nil {
+			if err := s.createTransportBookingFromIntent(intent, intent.GetTransitLoungeIntent(), masterBookingID, "transit"); err != nil {
 				s.logger.WithError(err).Error("Failed to create transport booking for transit lounge")
 			}
 		}
@@ -1204,7 +1204,7 @@ func (s *BookingOrchestratorService) ConfirmBooking(
 			}
 
 			// Create transport booking if requested
-			if err := s.createTransportBookingFromIntent(intent, intent.GetPostTripLoungeIntent(), masterBookingID, "user_to_location"); err != nil {
+			if err := s.createTransportBookingFromIntent(intent, intent.GetPostTripLoungeIntent(), masterBookingID, "post_trip"); err != nil {
 				s.logger.WithError(err).Error("Failed to create transport booking for post-trip lounge")
 			}
 		}
@@ -2465,12 +2465,49 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 	}
 
 	var targetLoungeID *string
-	if loungeBookingID != nil && *loungeBookingID != "" {
-		targetLoungeID = loungeBookingID
-	} else if req.LoungeBookingID != "" {
-		targetLoungeID = &req.LoungeBookingID
-	} else if req.LoungeID != "" {
+	if req.LoungeID != "" {
 		targetLoungeID = &req.LoungeID
+	} else if loungeBookingID != nil && *loungeBookingID != "" {
+		if lUUID, parseErr := uuid.Parse(*loungeBookingID); parseErr == nil {
+			if lb, err := s.loungeBookingRepo.GetLoungeBookingByID(lUUID); err == nil && lb != nil && lb.LoungeID != uuid.Nil {
+				pLoungeID := lb.LoungeID.String()
+				targetLoungeID = &pLoungeID
+			}
+		}
+		if targetLoungeID == nil {
+			targetLoungeID = loungeBookingID
+		}
+	} else if req.LoungeBookingID != "" {
+		if lUUID, parseErr := uuid.Parse(req.LoungeBookingID); parseErr == nil {
+			if lb, err := s.loungeBookingRepo.GetLoungeBookingByID(lUUID); err == nil && lb != nil && lb.LoungeID != uuid.Nil {
+				pLoungeID := lb.LoungeID.String()
+				targetLoungeID = &pLoungeID
+			}
+		}
+		if targetLoungeID == nil {
+			targetLoungeID = &req.LoungeBookingID
+		}
+	}
+
+	// If targetLoungeID is still missing but we have masterBookingID, find the corresponding lounge booking
+	if targetLoungeID == nil && masterBookingID != nil {
+		if mUUID, parseErr := uuid.Parse(*masterBookingID); parseErr == nil {
+			if lbs, err := s.loungeBookingRepo.GetLoungeBookingsByBookingID(mUUID.String()); err == nil {
+				targetType := "pre_trip"
+				if req.LoungeTransportType != "" {
+					targetType = req.LoungeTransportType
+				} else if !req.IsPreTrip {
+					targetType = "post_trip"
+				}
+				for _, lb := range lbs {
+					if string(lb.BookingType) == targetType || (targetType == "pre_trip" && string(lb.BookingType) == "standalone") {
+						pLoungeID := lb.LoungeID.String()
+						targetLoungeID = &pLoungeID
+						break
+					}
+				}
+			}
+		}
 	}
 
 	var loungeTransportType *string
