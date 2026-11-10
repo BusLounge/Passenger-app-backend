@@ -1608,10 +1608,18 @@ func (h *LoungeBookingHandler) CreateLoungeOrder(c *gin.Context) {
 		return
 	}
 
+	var orderUserID *uuid.UUID
+	if userCtx.UserID != uuid.Nil {
+		orderUserID = &userCtx.UserID
+	} else if booking.UserID != uuid.Nil {
+		orderUserID = &booking.UserID
+	}
+
 	// Build order
 	order := &models.LoungeOrder{
 		LoungeBookingID: bookingID,
 		LoungeID:        booking.LoungeID,
+		UserID:          orderUserID,
 		DiscountAmount:  "0.00",
 	}
 
@@ -1658,6 +1666,7 @@ func (h *LoungeBookingHandler) CreateLoungeOrder(c *gin.Context) {
 		items = append(items, models.LoungeOrderItem{
 			ProductID:   productID,
 			ProductName: product.Name,
+			ProductType: string(product.ProductType),
 			Quantity:    item.Quantity,
 			UnitPrice:   product.Price,
 			TotalPrice:  strconv.FormatFloat(totalFloat, 'f', 2, 64),
@@ -1673,7 +1682,7 @@ func (h *LoungeBookingHandler) CreateLoungeOrder(c *gin.Context) {
 		log.Printf("ERROR: Failed to create lounge order: %v", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "creation_failed",
-			Message: "Failed to create order",
+			Message: "Failed to create order: " + err.Error(),
 		})
 		return
 	}
