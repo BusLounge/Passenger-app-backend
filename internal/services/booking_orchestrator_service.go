@@ -2455,6 +2455,9 @@ func (s *BookingOrchestratorService) AddTransportToBooking(
 	cancellationReason := ""
 	refundStatus := ""
 
+	if masterBookingID == nil && req.MasterBookingID != "" {
+		masterBookingID = &req.MasterBookingID
+	}
 	if masterBookingID == nil && loungeBookingID != nil {
 		if lUUID, parseErr := uuid.Parse(*loungeBookingID); parseErr == nil {
 			if lb, err := s.loungeBookingRepo.GetLoungeBookingByID(lUUID); err == nil && lb != nil && lb.MasterBookingID != nil {

@@ -327,7 +327,10 @@ func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterB
 		LEFT JOIN lounge_bookings lb ON tb.lounge_id = lb.id
 		LEFT JOIN lounges l2 ON lb.lounge_id = l2.id
 		LEFT JOIN lounge_transport_locations ptl ON tb.pickup_location_id = ptl.id
-		WHERE tb.booking_id = $1 OR tb.lounge_id IN (SELECT id FROM lounge_bookings WHERE master_booking_id = $1)`
+		WHERE tb.booking_id = $1 
+		   OR tb.booking_id IN (SELECT id FROM lounge_bookings WHERE master_booking_id = $1)
+		   OR tb.lounge_id IN (SELECT id FROM lounge_bookings WHERE master_booking_id = $1)
+		   OR tb.lounge_id IN (SELECT lounge_id FROM lounge_bookings WHERE master_booking_id = $1)`
 	err = r.db.Select(&transportBookings, queryTransport, bookingID)
 	if err == nil && len(transportBookings) > 0 {
 		booking.TransportBookings = transportBookings
@@ -1205,6 +1208,13 @@ func (r *AppBookingRepository) GetLoungeBookingsByBookingID(bookingID string) ([
 		err = r.db.Select(&preOrders, preOrderQuery, booking.ID)
 		if err == nil {
 			booking.PreOrders = preOrders
+		}
+
+		// Get in-lounge orders
+		loungeRepo := NewLoungeBookingRepository(r.db)
+		orders, oErr := loungeRepo.GetOrdersByBookingID(booking.ID)
+		if oErr == nil && len(orders) > 0 {
+			booking.Orders = orders
 		}
 
 		bookings = append(bookings, booking)

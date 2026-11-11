@@ -71,4 +71,5 @@ type AddTransportRequest struct {
 	LoungeTransportType      string  `json:"lounge_transport_type"`
 	LoungeID                 string  `json:"lounge_id"`
 	LoungeBookingID          string  `json:"lounge_booking_id"`
+	MasterBookingID          string  `json:"master_booking_id"`
 }
