@@ -494,7 +494,7 @@ func (r *AppBookingRepository) GetUpcomingBookingsByUserID(userID string, limit,
 			  COALESCE(
 				st.departure_datetime,
 				(SELECT MIN(scheduled_arrival) FROM lounge_bookings lb WHERE lb.master_booking_id = b.id)
-			  ) > NOW() AT TIME ZONE 'Asia/Colombo' - INTERVAL '24 hours'
+			  ) > NOW() AT TIME ZONE 'Asia/Colombo'
 		  )
 		ORDER BY departure_datetime ASC
 		LIMIT $2 OFFSET $3`
