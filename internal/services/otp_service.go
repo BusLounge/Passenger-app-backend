@@ -16,7 +16,7 @@ const (
 	OTPLength = 6
 
 	// OTPExpiryDuration is how long an OTP is valid (5 minutes)
-	OTPExpiryDuration = 5 * time.Minute
+	OTPExpiryDuration = 1 * time.Minute
 
 	// MaxOTPAttempts is the maximum number of validation attempts
 	MaxOTPAttempts = 3
@@ -66,7 +66,7 @@ func (s *OTPService) GenerateOTP(phone, ipAddress, userAgent string) (string, er
 	}
 
 	// Calculate expiry time
-	expiresAt := time.Now().Add(OTPExpiryDuration)
+	expiresAt := time.Now().UTC().Add(OTPExpiryDuration)
 
 	// Store in database with IP address and user agent for security tracking
 	query := `
@@ -100,7 +100,7 @@ func (s *OTPService) ValidateOTP(phone, otp string) (bool, error) {
 	}
 
 	// Check if expired
-	if time.Now().After(otpRecord.ExpiresAt) {
+	if time.Now().UTC().After(otpRecord.ExpiresAt.UTC()) {
 		return false, ErrOTPExpired
 	}
 
@@ -171,7 +171,7 @@ func (s *OTPService) IsOTPExpired(phone string) (bool, error) {
 		return true, fmt.Errorf("failed to get OTP record: %w", err)
 	}
 
-	return time.Now().After(otpRecord.ExpiresAt), nil
+	return time.Now().UTC().After(otpRecord.ExpiresAt.UTC()), nil
 }
 
 // GetOTPExpiry returns the expiry time for the OTP
@@ -184,7 +184,7 @@ func (s *OTPService) GetOTPExpiry(phone string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("failed to get OTP record: %w", err)
 	}
 
-	return otpRecord.ExpiresAt, nil
+	return otpRecord.ExpiresAt.UTC(), nil
 }
 
 // CleanupExpiredOTPs removes all expired OTP records from the database
@@ -194,7 +194,7 @@ func (s *OTPService) CleanupExpiredOTPs() (int64, error) {
 		WHERE expires_at < $1
 	`
 
-	result, err := s.db.Exec(query, time.Now())
+	result, err := s.db.Exec(query, time.Now().UTC())
 	if err != nil {
 		return 0, fmt.Errorf("failed to cleanup expired OTPs: %w", err)
 	}
@@ -346,7 +346,7 @@ func (s *OTPService) GetOTPStats(phone string) (map[string]interface{}, error) {
 		remaining = 0
 	}
 
-	timeUntilExpiry := time.Until(otpRecord.ExpiresAt)
+	timeUntilExpiry := time.Until(otpRecord.ExpiresAt.UTC())
 	if timeUntilExpiry < 0 {
 		timeUntilExpiry = 0
 	}
@@ -355,8 +355,8 @@ func (s *OTPService) GetOTPStats(phone string) (map[string]interface{}, error) {
 		"has_active_otp":       true,
 		"attempts_made":        otpRecord.Attempts,
 		"attempts_remaining":   remaining,
-		"is_expired":           time.Now().After(otpRecord.ExpiresAt),
-		"expires_at":           otpRecord.ExpiresAt,
+		"is_expired":           time.Now().UTC().After(otpRecord.ExpiresAt.UTC()),
+		"expires_at":           otpRecord.ExpiresAt.UTC(),
 		"time_until_expiry":    timeUntilExpiry.Seconds(),
 		"created_at":           otpRecord.CreatedAt,
 		"max_attempts_allowed": MaxOTPAttempts,

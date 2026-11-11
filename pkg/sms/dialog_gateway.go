@@ -282,7 +282,7 @@ func (d *DialogGateway) SendOTP(phone, otpCode, appType string) (int64, error) {
 		message = fmt.Sprintf("<#> %s is your SmartTransit OTP.\n%s", otpCode, appHash)
 	} else {
 		// Fallback message without app hash (User Consent API will be used on client)
-		message = fmt.Sprintf("Your OTP is %s. Valid for 5 minutes.", otpCode)
+		message = fmt.Sprintf("Your OTP is %s. Valid for 1 minute.", otpCode)
 	}
 
 	// Prepare request
