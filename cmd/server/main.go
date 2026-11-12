@@ -1103,6 +1103,9 @@ func main() {
 			logger.Info("  GET /api/v1/magiya/schedules")
 			magiya.GET("/schedules", magiyaHandler.GetSchedules)
 
+			logger.Info("  GET /api/v1/magiya/search")
+			magiya.GET("/search", magiyaHandler.SearchSchedules)
+
 			logger.Info("  GET /api/v1/magiya/seat-map")
 			magiya.GET("/seat-map", magiyaHandler.GetSeatLayout)
 		}

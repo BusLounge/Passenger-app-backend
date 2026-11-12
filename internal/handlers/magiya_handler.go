@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -92,4 +93,51 @@ func (h *MagiyaHandler) GetSeatLayout(c *gin.Context) {
 	}
 
 	c.Data(http.StatusOK, "application/json; charset=utf-8", seatMapJSON)
+}
+
+// SearchSchedules handles GET /api/v1/magiya/search
+// @Summary Search Magiya schedules using origin and destination coordinates
+// @Description Matches coordinates to nearest Magiya stations using expanding radius (1km, 3km, etc.) and returns schedules
+// @Tags Magiya
+// @Produce json
+// @Param from_lat query number true "Origin Latitude"
+// @Param from_lng query number true "Origin Longitude"
+// @Param to_lat query number true "Destination Latitude"
+// @Param to_lng query number true "Destination Longitude"
+// @Param date query string false "Travel Date (YYYY-MM-DD)"
+// @Success 200 {object} services.MagiyaCoordinateSearchResult
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/v1/magiya/search [get]
+func (h *MagiyaHandler) SearchSchedules(c *gin.Context) {
+	fromLatStr := c.Query("from_lat")
+	fromLngStr := c.Query("from_lng")
+	toLatStr := c.Query("to_lat")
+	toLngStr := c.Query("to_lng")
+	date := c.Query("date")
+
+	fromLat, err1 := strconv.ParseFloat(fromLatStr, 64)
+	fromLng, err2 := strconv.ParseFloat(fromLngStr, 64)
+	toLat, err3 := strconv.ParseFloat(toLatStr, 64)
+	toLng, err4 := strconv.ParseFloat(toLngStr, 64)
+
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "from_lat, from_lng, to_lat, and to_lng are required numeric parameters",
+		})
+		return
+	}
+
+	result, err := h.service.SearchSchedulesByCoordinates(fromLat, fromLng, toLat, toLng, date)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to search Magiya schedules by coordinates")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to search Magiya schedules",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }
