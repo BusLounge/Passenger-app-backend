@@ -816,10 +816,12 @@ func (r *LoungeBookingRepository) GetLoungeBookingByReference(reference string) 
 	cleanRef := strings.TrimSpace(reference)
 	if strings.HasPrefix(cleanRef, "{") {
 		var qrPayload struct {
+			Type             string `json:"type"`
 			BookingReference string `json:"booking_reference"`
 			BookingID        string `json:"booking_id"`
 			MasterRef        string `json:"master_reference"`
 			MasterID         string `json:"master_booking_id"`
+			Ref              string `json:"ref"`
 		}
 		if err := json.Unmarshal([]byte(cleanRef), &qrPayload); err == nil {
 			if qrPayload.BookingReference != "" {
@@ -830,6 +832,8 @@ func (r *LoungeBookingRepository) GetLoungeBookingByReference(reference string) 
 				cleanRef = qrPayload.BookingID
 			} else if qrPayload.MasterID != "" {
 				cleanRef = qrPayload.MasterID
+			} else if qrPayload.Ref != "" {
+				cleanRef = qrPayload.Ref
 			}
 		}
 	}
@@ -844,15 +848,31 @@ func (r *LoungeBookingRepository) GetLoungeBookingByReference(reference string) 
 			FROM lounge_bookings lb
 			JOIN bookings b ON lb.master_booking_id = b.id
 			WHERE b.booking_reference = $1 AND lb.status != 'cancelled'
-			ORDER BY lb.scheduled_arrival ASC
+			ORDER BY 
+				CASE lb.booking_type
+					WHEN 'pre_trip' THEN 1
+					WHEN 'transit' THEN 2
+					WHEN 'post_trip' THEN 3
+					WHEN 'standalone' THEN 4
+					ELSE 5
+				END ASC,
+				lb.scheduled_arrival ASC
 			LIMIT 1`
 		mErr := r.db.Get(&bookingID, masterQuery, cleanRef)
 		if mErr != nil {
 			// Fallback 2: Check if cleanRef is master booking ID directly
 			mIDQuery := `
-				SELECT id FROM lounge_bookings 
-				WHERE master_booking_id::text = $1 AND status != 'cancelled'
-				ORDER BY scheduled_arrival ASC
+				SELECT lb.id FROM lounge_bookings lb
+				WHERE lb.master_booking_id::text = $1 AND lb.status != 'cancelled'
+				ORDER BY 
+					CASE lb.booking_type
+						WHEN 'pre_trip' THEN 1
+						WHEN 'transit' THEN 2
+						WHEN 'post_trip' THEN 3
+						WHEN 'standalone' THEN 4
+						ELSE 5
+					END ASC,
+					lb.scheduled_arrival ASC
 				LIMIT 1`
 			if idErr := r.db.Get(&bookingID, mIDQuery, cleanRef); idErr != nil {
 				// Fallback 3: Check if cleanRef is a lounge booking UUID
@@ -910,7 +930,15 @@ func (r *LoungeBookingRepository) GetLoungeBookingsByBookingID(masterBookingID s
 		FROM lounge_bookings lb
 		JOIN lounges l ON lb.lounge_id = l.id
 		WHERE lb.master_booking_id = $1
-		ORDER BY lb.created_at ASC
+		ORDER BY 
+			CASE lb.booking_type
+				WHEN 'pre_trip' THEN 1
+				WHEN 'transit' THEN 2
+				WHEN 'post_trip' THEN 3
+				WHEN 'standalone' THEN 4
+				ELSE 5
+			END ASC,
+			lb.scheduled_arrival ASC
 	`
 
 	rows, err := r.db.Query(query, masterBookingID)

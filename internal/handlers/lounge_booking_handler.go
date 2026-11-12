@@ -20,6 +20,7 @@ type LoungeBookingHandler struct {
 	bookingRepo     *database.LoungeBookingRepository
 	loungeRepo      *database.LoungeRepository
 	loungeOwnerRepo *database.LoungeOwnerRepository
+	staffRepo       *database.LoungeStaffRepository
 	walletService   *services.WalletService
 }
 
@@ -36,6 +37,11 @@ func NewLoungeBookingHandler(
 		loungeOwnerRepo: loungeOwnerRepo,
 		walletService:   walletService,
 	}
+}
+
+// SetStaffRepository sets the staff repository for the handler
+func (h *LoungeBookingHandler) SetStaffRepository(sr *database.LoungeStaffRepository) {
+	h.staffRepo = sr
 }
 
 // SetWalletService sets the wallet service for the handler
@@ -1143,37 +1149,57 @@ func (h *LoungeBookingHandler) GetLoungeBookingByReference(c *gin.Context) {
 		return
 	}
 
-	// Check ownership
+	// Check ownership / authorization
 	if booking.UserID != userCtx.UserID {
-		owner, _ := h.loungeOwnerRepo.GetLoungeOwnerByUserID(userCtx.UserID)
-		lounge, _ := h.loungeRepo.GetLoungeByID(booking.LoungeID)
-		isAuthorized := owner != nil && lounge != nil && lounge.LoungeOwnerID == owner.ID
+		authorizedLoungeIDs := make(map[uuid.UUID]bool)
+		if owner, oErr := h.loungeOwnerRepo.GetLoungeOwnerByUserID(userCtx.UserID); oErr == nil && owner != nil {
+			if ownerLounges, lErr := h.loungeRepo.GetLoungesByOwnerID(owner.ID); lErr == nil {
+				for _, ol := range ownerLounges {
+					authorizedLoungeIDs[ol.ID] = true
+				}
+			}
+		}
+		if h.staffRepo != nil {
+			if staff, sErr := h.staffRepo.GetStaffByUserID(userCtx.UserID); sErr == nil && staff != nil && staff.EmploymentStatus == models.LoungeStaffEmploymentActive {
+				authorizedLoungeIDs[staff.LoungeID] = true
+			}
+		}
 
-		// If primary lounge booking is not for this owner, check if any related booking is
-		if !isAuthorized && owner != nil && len(booking.RelatedBookings) > 0 {
-			for i, rel := range booking.RelatedBookings {
-				relLounge, _ := h.loungeRepo.GetLoungeByID(rel.LoungeID)
-				if relLounge != nil && relLounge.LoungeOwnerID == owner.ID {
-					orig := *booking
-					orig.RelatedBookings = nil
-					if newPrimary, pErr := h.bookingRepo.GetLoungeBookingByID(rel.ID); pErr == nil && newPrimary != nil {
-						booking = newPrimary
-						var newRelated []models.LoungeBooking
-						newRelated = append(newRelated, orig)
-						for j, other := range orig.RelatedBookings {
-							if j != i && other.ID != booking.ID {
-								newRelated = append(newRelated, other)
-							}
-						}
-						booking.RelatedBookings = newRelated
-						isAuthorized = true
+		if len(authorizedLoungeIDs) > 0 {
+			// If user is owner/staff of the sibling booking rather than primary, or if primary is already checked in/completed
+			needsSwap := !authorizedLoungeIDs[booking.LoungeID]
+			if !needsSwap && (booking.Status == models.LoungeBookingStatusCheckedIn || booking.Status == models.LoungeBookingStatusCompleted) {
+				for _, rel := range booking.RelatedBookings {
+					if authorizedLoungeIDs[rel.LoungeID] && rel.Status == models.LoungeBookingStatusConfirmed {
+						needsSwap = true
 						break
+					}
+				}
+			}
+
+			if needsSwap && len(booking.RelatedBookings) > 0 {
+				for i, rel := range booking.RelatedBookings {
+					if authorizedLoungeIDs[rel.LoungeID] {
+						orig := *booking
+						orig.RelatedBookings = nil
+						if newPrimary, pErr := h.bookingRepo.GetLoungeBookingByID(rel.ID); pErr == nil && newPrimary != nil {
+							booking = newPrimary
+							var newRelated []models.LoungeBooking
+							newRelated = append(newRelated, orig)
+							for j, other := range orig.RelatedBookings {
+								if j != i && other.ID != booking.ID {
+									newRelated = append(newRelated, other)
+								}
+							}
+							booking.RelatedBookings = newRelated
+							break
+						}
 					}
 				}
 			}
 		}
 
-		if !isAuthorized {
+		if !authorizedLoungeIDs[booking.LoungeID] {
 			c.JSON(http.StatusForbidden, ErrorResponse{
 				Error:   "forbidden",
 				Message: "Not authorized to view this booking",
@@ -1355,18 +1381,18 @@ func (h *LoungeBookingHandler) GetTodaysBookings(c *gin.Context) {
 	}
 
 	// Verify ownership/staff
-	owner, err := h.loungeOwnerRepo.GetLoungeOwnerByUserID(userCtx.UserID)
-	if err != nil || owner == nil {
-		// TODO: Check if user is lounge staff
-		c.JSON(http.StatusForbidden, ErrorResponse{
-			Error:   "forbidden",
-			Message: "Not authorized",
-		})
-		return
+	isAuthorized := false
+	if owner, err := h.loungeOwnerRepo.GetLoungeOwnerByUserID(userCtx.UserID); err == nil && owner != nil {
+		if lounge, err := h.loungeRepo.GetLoungeByID(loungeID); err == nil && lounge != nil && lounge.LoungeOwnerID == owner.ID {
+			isAuthorized = true
+		}
 	}
-
-	lounge, err := h.loungeRepo.GetLoungeByID(loungeID)
-	if err != nil || lounge == nil || lounge.LoungeOwnerID != owner.ID {
+	if !isAuthorized && h.staffRepo != nil {
+		if staff, err := h.staffRepo.GetStaffByUserID(userCtx.UserID); err == nil && staff != nil && staff.EmploymentStatus == models.LoungeStaffEmploymentActive && staff.LoungeID == loungeID {
+			isAuthorized = true
+		}
+	}
+	if !isAuthorized {
 		c.JSON(http.StatusForbidden, ErrorResponse{
 			Error:   "forbidden",
 			Message: "Not authorized",
@@ -1446,10 +1472,18 @@ func (h *LoungeBookingHandler) CheckInGuest(c *gin.Context) {
 	}
 
 	// Verify user is lounge owner/staff
-	owner, _ := h.loungeOwnerRepo.GetLoungeOwnerByUserID(userCtx.UserID)
-	lounge, _ := h.loungeRepo.GetLoungeByID(booking.LoungeID)
-	if owner == nil || lounge == nil || lounge.LoungeOwnerID != owner.ID {
-		// TODO: Check if user is lounge staff
+	isCheckInAuthorized := false
+	if owner, _ := h.loungeOwnerRepo.GetLoungeOwnerByUserID(userCtx.UserID); owner != nil {
+		if lounge, _ := h.loungeRepo.GetLoungeByID(booking.LoungeID); lounge != nil && lounge.LoungeOwnerID == owner.ID {
+			isCheckInAuthorized = true
+		}
+	}
+	if !isCheckInAuthorized && h.staffRepo != nil {
+		if staff, err := h.staffRepo.GetStaffByUserID(userCtx.UserID); err == nil && staff != nil && staff.EmploymentStatus == models.LoungeStaffEmploymentActive && staff.LoungeID == booking.LoungeID {
+			isCheckInAuthorized = true
+		}
+	}
+	if !isCheckInAuthorized {
 		c.JSON(http.StatusForbidden, ErrorResponse{
 			Error:   "forbidden",
 			Message: "Not authorized",

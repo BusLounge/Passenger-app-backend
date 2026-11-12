@@ -237,6 +237,7 @@ func main() {
 	logger.Info("Initializing lounge booking system...")
 	loungeBookingRepo := database.NewLoungeBookingRepository(sqlxDB.DB)
 	loungeBookingHandler := handlers.NewLoungeBookingHandler(loungeBookingRepo, loungeRepository, loungeOwnerRepository, nil)
+	loungeBookingHandler.SetStaffRepository(loungeStaffRepository)
 	logger.Info("Lounge booking system initialized")
 
 	logger.Info("DEBUG: Lounge handlers initialized successfully")

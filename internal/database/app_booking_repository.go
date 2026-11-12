@@ -1158,7 +1158,15 @@ func (r *AppBookingRepository) GetLoungeBookingsByBookingID(bookingID string) ([
 		FROM lounge_bookings lb
 		JOIN lounges l ON lb.lounge_id = l.id
 		WHERE lb.master_booking_id = $1
-		ORDER BY lb.booking_type ASC, lb.created_at ASC
+		ORDER BY 
+			CASE lb.booking_type
+				WHEN 'pre_trip' THEN 1
+				WHEN 'transit' THEN 2
+				WHEN 'post_trip' THEN 3
+				WHEN 'standalone' THEN 4
+				ELSE 5
+			END ASC,
+			lb.scheduled_arrival ASC
 	`
 
 	rows, err := r.db.Query(query, bookingID)
