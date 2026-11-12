@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -137,5 +138,66 @@ func (h *WalletHandler) GetTopUpHash(c *gin.Context) {
 		"order_id":    orderID,
 		"amount":      fmt.Sprintf("%.2f", amount),
 		"currency":    currency,
+	})
+}
+
+// WithdrawRequest represents the request body for bank withdrawal
+type WithdrawRequest struct {
+	Amount            float64 `json:"amount" binding:"required"`
+	BankName          string  `json:"bank_name" binding:"required"`
+	AccountNumber     string  `json:"account_number" binding:"required"`
+	AccountHolderName string  `json:"account_holder_name"`
+}
+
+// Withdraw transfers money from user's wallet to their bank account
+func (h *WalletHandler) Withdraw(c *gin.Context) {
+	userCtx, exists := middleware.GetUserContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	var req WithdrawRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Fallback for query parameters (GET or bypass via Choreo gateway)
+		amountStr := c.Query("amount")
+		bankName := c.Query("bank_name")
+		accNum := c.Query("account_number")
+		accHolder := c.Query("account_holder_name")
+		if amountStr != "" && bankName != "" && accNum != "" {
+			var amount float64
+			if _, scanErr := fmt.Sscanf(amountStr, "%f", &amount); scanErr == nil && amount > 0 {
+				req.Amount = amount
+				req.BankName = bankName
+				req.AccountNumber = accNum
+				req.AccountHolderName = accHolder
+				err = nil
+			}
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format: " + err.Error()})
+			return
+		}
+	}
+
+	if req.Amount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "withdrawal amount must be greater than zero"})
+		return
+	}
+
+	ref, err := h.walletService.WithdrawToBank(userCtx.UserID, req.Amount, req.BankName, req.AccountNumber, req.AccountHolderName)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "insufficient") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient wallet balance"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Transfer to bank account initiated successfully",
+		"status":    "success",
+		"reference": ref,
 	})
 }

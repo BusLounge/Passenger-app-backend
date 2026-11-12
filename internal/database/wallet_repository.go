@@ -15,6 +15,7 @@ type WalletRepository interface {
 	GetWalletBalance(userID uuid.UUID) (float64, error)
 	ConfirmTopUp(userID uuid.UUID, amount float64, gatewayRef string) error
 	DeductBalance(userID uuid.UUID, amount float64, reference string) error
+	WithdrawBalance(userID uuid.UUID, amount float64, bankName, accountNumber, accountHolderName, reference string) error
 }
 
 type walletRepository struct {
@@ -159,6 +160,68 @@ func (r *walletRepository) ConfirmTopUp(userID uuid.UUID, amount float64, gatewa
 		PriceBreakdown:    models.TransactionPriceBreakdown{"topup_amount": amount},
 		Status:            "success",
 	}
+	err = r.transactionRepo.CreateTransaction(tx, globalTx)
+	if err != nil {
+		return fmt.Errorf("failed to create global transaction: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (r *walletRepository) WithdrawBalance(userID uuid.UUID, amount float64, bankName, accountNumber, accountHolderName, reference string) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	wallet, err := r.GetWalletByUserID(userID)
+	if err != nil {
+		return err
+	}
+
+	if wallet.Balance < amount {
+		return fmt.Errorf("insufficient wallet balance")
+	}
+
+	_, err = tx.Exec(`
+		UPDATE wallets_passenger 
+		SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $2
+	`, amount, wallet.ID)
+	if err != nil {
+		return err
+	}
+
+	balanceBefore := wallet.Balance
+	balanceAfter := wallet.Balance - amount
+
+	last4 := accountNumber
+	if len(last4) > 4 {
+		last4 = last4[len(last4)-4:]
+	}
+	desc := fmt.Sprintf("Transfer to %s (A/C: ****%s)", bankName, last4)
+
+	_, err = tx.Exec(`
+		INSERT INTO wallet_transactions (wallet_id, amount, balance_before, balance_after, transaction_type, reference_type, gateway_reference, description, status)
+		VALUES ($1, $2, $3, $4, 'debit', 'withdrawal', $5, $6, 'completed')
+	`, wallet.ID, amount, balanceBefore, balanceAfter, reference, desc)
+	if err != nil {
+		return err
+	}
+
+	globalTx := &models.Transaction{
+		UserID:            userID,
+		ReferenceType:     "wallet_withdrawal",
+		PaymentSource:     "wallet",
+		ProviderReference: &reference,
+		Subtotal:          amount,
+		TaxAmount:         0,
+		TotalAmount:       amount,
+		PriceBreakdown:    models.TransactionPriceBreakdown{"withdrawal_amount": amount, "bank_name": bankName, "account_holder": accountHolderName},
+		Status:            "success",
+	}
+
 	err = r.transactionRepo.CreateTransaction(tx, globalTx)
 	if err != nil {
 		return fmt.Errorf("failed to create global transaction: %w", err)

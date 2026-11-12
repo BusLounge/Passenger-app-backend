@@ -682,6 +682,9 @@ func main() {
 				loungesProtected.GET("/near-stop/wallet-bypass/confirm", walletHandler.ConfirmTopUp)
 				// We also add /data just in case they need to call getWalletData via a bypass later
 				loungesProtected.GET("/near-stop/wallet-bypass/data", walletHandler.GetWallet)
+				logger.Info("  POST & GET /api/v1/lounges/near-stop/wallet-bypass/withdraw (protected)")
+				loungesProtected.POST("/near-stop/wallet-bypass/withdraw", walletHandler.Withdraw)
+				loungesProtected.GET("/near-stop/wallet-bypass/withdraw", walletHandler.Withdraw)
 
 				// BYPASS ROUTES FOR TRANSPORT BOOKINGS
 				logger.Info("  POST /api/v1/lounges/near-stop/transport/lounge/:id (protected)")
@@ -1026,6 +1029,8 @@ func main() {
 			wallet.POST("/topup/confirm", walletHandler.ConfirmTopUp)
 			logger.Info("  GET /api/v1/wallet/topup/hash - Generate PayHere checkout hash server-side")
 			wallet.GET("/topup/hash", walletHandler.GetTopUpHash)
+			logger.Info("  POST /api/v1/wallet/withdraw - Withdraw to bank account")
+			wallet.POST("/withdraw", walletHandler.Withdraw)
 		}
 		logger.Info("Wallet routes registered successfully")
 

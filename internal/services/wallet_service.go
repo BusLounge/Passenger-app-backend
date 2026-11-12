@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -111,6 +112,39 @@ func (s *WalletService) DeductBalance(userID uuid.UUID, amount float64, referenc
 	go s.checkAndNotifyLowBalance(userID)
 
 	return nil
+}
+
+// WithdrawToBank withdraws money from user's digital wallet to their specified bank account
+func (s *WalletService) WithdrawToBank(userID uuid.UUID, amount float64, bankName, accountNumber, accountHolderName string) (string, error) {
+	if amount <= 0 {
+		return "", fmt.Errorf("withdrawal amount must be greater than zero")
+	}
+	if bankName == "" || accountNumber == "" {
+		return "", fmt.Errorf("bank name and account number are required")
+	}
+
+	ref := fmt.Sprintf("WD-%d", time.Now().UnixNano()/1000000)
+
+	err := s.walletRepo.WithdrawBalance(userID, amount, bankName, accountNumber, accountHolderName, ref)
+	if err != nil {
+		s.logger.WithError(err).WithFields(logrus.Fields{
+			"user_id": userID,
+			"amount":  amount,
+			"bank":    bankName,
+		}).Error("Failed to withdraw wallet balance")
+		return "", err
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"user_id": userID,
+		"amount":  amount,
+		"bank":    bankName,
+		"ref":     ref,
+	}).Info("Wallet withdrawal successful")
+
+	go s.checkAndNotifyLowBalance(userID)
+
+	return ref, nil
 }
 
 // checkAndNotifyLowBalance fetches the current balance and sends an SMS if it is below the threshold.
