@@ -129,7 +129,7 @@ func (r *LoungeBookingRepository) GetProductsByLoungeID(loungeID uuid.UUID) ([]m
 			c.name as category_name
 		FROM lounge_products p
 		LEFT JOIN lounge_marketplace_categories c ON p.category_id = c.id
-		WHERE p.lounge_id = $1 AND p.is_active = TRUE AND p.is_available = TRUE
+		WHERE p.lounge_id = $1 AND COALESCE(p.is_active, TRUE) = TRUE AND (COALESCE(p.is_available, TRUE) = TRUE OR COALESCE(p.is_pre_orderable, FALSE) = TRUE)
 		ORDER BY COALESCE(c.display_order, 999), p.display_order ASC
 	`
 
@@ -218,7 +218,7 @@ func (r *LoungeBookingRepository) GetProductsByLoungeID(loungeID uuid.UUID) ([]m
 			"meal-status", "breakfast-status", "lunch-status", "evening-snack-status", "dinner-status",
 			created_at, updated_at
 		FROM lounge_special_packages
-		WHERE lounge_id = $1 AND is_active = TRUE
+		WHERE lounge_id = $1 AND COALESCE(is_active, TRUE) = TRUE
 		ORDER BY created_at DESC
 	`
 

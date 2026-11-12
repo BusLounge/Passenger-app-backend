@@ -921,7 +921,7 @@ func (h *LoungeBookingHandler) CreateLoungeBooking(c *gin.Context) {
 		unitPrice := product.Price
 		// Parse price and calculate total (simplified - proper decimal handling recommended)
 		var priceFloat float64
-		_, _ = strconv.ParseFloat(unitPrice, 64)
+		priceFloat, _ = strconv.ParseFloat(unitPrice, 64)
 		totalFloat := priceFloat * float64(po.Quantity)
 		preOrderTotal += totalFloat
 
