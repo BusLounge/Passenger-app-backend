@@ -339,6 +339,17 @@ func (r *AppBookingRepository) GetBookingByID(bookingID string) (*models.MasterB
 	return booking, nil
 }
 
+// GetBookingByIntentID retrieves a booking by booking_intent_id with all related data
+func (r *AppBookingRepository) GetBookingByIntentID(intentID string) (*models.MasterBooking, error) {
+	var bookingID string
+	query := `SELECT id FROM bookings WHERE booking_intent_id = $1 ORDER BY created_at DESC LIMIT 1`
+	err := r.db.Get(&bookingID, query, intentID)
+	if err != nil {
+		return nil, err
+	}
+	return r.GetBookingByID(bookingID)
+}
+
 // GetBookingByReference retrieves a booking by reference
 func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.MasterBooking, error) {
 	booking := &models.MasterBooking{}

@@ -620,9 +620,12 @@ type ConfirmedBusBooking struct {
 
 // ConfirmedLoungeBooking represents the confirmed lounge booking details
 type ConfirmedLoungeBooking struct {
-	ID        uuid.UUID `json:"id"`
-	Reference string    `json:"reference"`
-	QRCode    *string   `json:"qr_code,omitempty"`
+	ID          uuid.UUID  `json:"id"`
+	Reference   string     `json:"reference"`
+	QRCode      *string    `json:"qr_code,omitempty"`
+	TotalAmount float64    `json:"total_amount,omitempty"`
+	LoungeID    *uuid.UUID `json:"lounge_id,omitempty"`
+	LoungeName  string     `json:"lounge_name,omitempty"`
 }
 
 // GetIntentStatusResponse is the response for getting intent status

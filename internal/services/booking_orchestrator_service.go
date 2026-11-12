@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -2363,19 +2364,98 @@ func (s *BookingOrchestratorService) buildIntentResponse(intent *models.BookingI
 }
 
 func (s *BookingOrchestratorService) buildConfirmResponse(intent *models.BookingIntent) *models.ConfirmBookingResponse {
-response := &models.ConfirmBookingResponse{
-TotalPaid: intent.TotalAmount,
-Currency:  intent.Currency,
-}
+	response := &models.ConfirmBookingResponse{
+		TotalPaid: intent.TotalAmount,
+		Currency:  intent.Currency,
+	}
 
-s.logger.WithFields(logrus.Fields{
-"intent_id": intent.ID,
-}).Info("Building confirm response")
+	s.logger.WithFields(logrus.Fields{
+		"intent_id": intent.ID,
+	}).Info("Building confirm response")
 
-// Booking IDs are tracked differently in the new schema, we skip detailed embedding here for now.
-    // Master ref should be queried from bookings where booking_intent_id = intent.ID
+	masterBooking, err := s.appBookingRepo.GetBookingByIntentID(intent.ID.String())
+	if err == nil && masterBooking != nil {
+		response.MasterReference = masterBooking.BookingReference
 
-return response
+		// Bus booking (if present)
+		if masterBooking.BusBooking != nil {
+			busUUID, _ := uuid.Parse(masterBooking.BusBooking.ID)
+			qr := masterBooking.BookingReference
+			if masterBooking.QRCodeData != nil && *masterBooking.QRCodeData != "" {
+				qr = *masterBooking.QRCodeData
+			}
+			response.BusBooking = &models.ConfirmedBusBooking{
+				ID:          busUUID,
+				Reference:   masterBooking.BookingReference,
+				QRCode:      qr,
+				TotalAmount: masterBooking.BusBooking.TotalFare,
+				IsReturn:    masterBooking.BusBooking.IsReturn,
+			}
+		}
+
+		// Lounge bookings
+		for _, lb := range masterBooking.LoungeBookings {
+			lbTotal, _ := strconv.ParseFloat(lb.TotalAmount, 64)
+			var lID *uuid.UUID
+			if lb.LoungeID != uuid.Nil {
+				lIDCopy := lb.LoungeID
+				lID = &lIDCopy
+			}
+
+			// Format lightweight QR payload:
+			// {"type":"lounge_booking","booking_reference":"BL-...","master_reference":"MB-..."}
+			qrPayload := map[string]string{
+				"type":              "lounge_booking",
+				"booking_reference": lb.BookingReference,
+				"master_reference":  masterBooking.BookingReference,
+			}
+			qrBytes, _ := json.Marshal(qrPayload)
+			qrStr := string(qrBytes)
+
+			confirmedLounge := &models.ConfirmedLoungeBooking{
+				ID:          lb.ID,
+				Reference:   lb.BookingReference,
+				QRCode:      &qrStr,
+				TotalAmount: lbTotal,
+				LoungeID:    lID,
+				LoungeName:  lb.LoungeName,
+			}
+
+			switch lb.BookingType {
+			case models.LoungeBookingPreTrip, models.LoungeBookingStandalone:
+				if response.PreLoungeBooking == nil {
+					response.PreLoungeBooking = confirmedLounge
+				}
+			case "transit":
+				if response.TransitLoungeBooking == nil {
+					response.TransitLoungeBooking = confirmedLounge
+				}
+			case models.LoungeBookingPostTrip:
+				if response.PostLoungeBooking == nil {
+					response.PostLoungeBooking = confirmedLounge
+				}
+			case "return_pre_trip":
+				if response.ReturnPreLoungeBooking == nil {
+					response.ReturnPreLoungeBooking = confirmedLounge
+				}
+			case "return_post_trip":
+				if response.ReturnPostLoungeBooking == nil {
+					response.ReturnPostLoungeBooking = confirmedLounge
+				}
+			default:
+				if response.PreLoungeBooking == nil {
+					response.PreLoungeBooking = confirmedLounge
+				}
+			}
+		}
+	}
+
+	// Fallback if master reference is still empty: check pre-lounge booking or intent
+	if response.MasterReference == "" && response.PreLoungeBooking != nil {
+		response.MasterReference = response.PreLoungeBooking.Reference
+	}
+
+	return response
 }
 
 func (s *BookingOrchestratorService) buildPartialAvailabilityError(
