@@ -1588,10 +1588,12 @@ func (s *BookingOrchestratorService) createLoungeBookingFromIntent(
 
 	// Set booking type
 	switch bookingType {
-	case "pre_trip":
+	case "pre_trip", "return_pre_trip":
 		booking.BookingType = models.LoungeBookingPreTrip
-	case "post_trip":
+	case "post_trip", "return_post_trip":
 		booking.BookingType = models.LoungeBookingPostTrip
+	case "transit":
+		booking.BookingType = models.LoungeBookingTransit
 	default:
 		booking.BookingType = models.LoungeBookingStandalone
 	}

@@ -350,8 +350,36 @@ func (r *AppBookingRepository) GetBookingByIntentID(intentID string) (*models.Ma
 	return r.GetBookingByID(bookingID)
 }
 
-// GetBookingByReference retrieves a booking by reference
+// GetBookingByReference retrieves a booking by reference, master reference, or raw QR JSON
 func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.MasterBooking, error) {
+	cleanRef := strings.TrimSpace(reference)
+	if strings.HasPrefix(cleanRef, "{") {
+		var qrPayload struct {
+			Type             string   `json:"type"`
+			BookingReference string   `json:"booking_reference"`
+			MasterRef        string   `json:"master_reference"`
+			MasterID         string   `json:"master_booking_id"`
+			Ref              string   `json:"ref"`
+		}
+		if err := json.Unmarshal([]byte(cleanRef), &qrPayload); err == nil {
+			if qrPayload.MasterRef != "" {
+				cleanRef = qrPayload.MasterRef
+			} else if qrPayload.BookingReference != "" {
+				cleanRef = qrPayload.BookingReference
+			} else if qrPayload.Ref != "" {
+				cleanRef = qrPayload.Ref
+			}
+		}
+	}
+
+	// Fallback: If cleanRef starts with 'LB-' (lounge booking ref), find master booking reference
+	if strings.HasPrefix(cleanRef, "LB-") {
+		var masterRef string
+		if mErr := r.db.Get(&masterRef, `SELECT b.booking_reference FROM bookings b JOIN lounge_bookings lb ON lb.master_booking_id = b.id WHERE lb.booking_reference = $1 LIMIT 1`, cleanRef); mErr == nil && masterRef != "" {
+			cleanRef = masterRef
+		}
+	}
+
 	booking := &models.MasterBooking{}
 	query := `
 		SELECT id, booking_reference, user_id, booking_type,
@@ -366,7 +394,7 @@ func (r *AppBookingRepository) GetBookingByReference(reference string) (*models.
 		       qr_code_data, qr_generated_at, created_at, updated_at
 		FROM bookings WHERE booking_reference = $1`
 
-	err := r.db.Get(booking, query, reference)
+	err := r.db.Get(booking, query, cleanRef)
 	if err != nil {
 		return nil, err
 	}
@@ -1168,7 +1196,7 @@ func (r *AppBookingRepository) GetLoungeBookingsByBookingID(bookingID string) ([
 			l.lounge_name, l.address as lounge_address
 		FROM lounge_bookings lb
 		JOIN lounges l ON lb.lounge_id = l.id
-		WHERE lb.master_booking_id = $1
+		WHERE (lb.master_booking_id::text = $1) AND lb.status != 'cancelled'
 		ORDER BY 
 			CASE lb.booking_type
 				WHEN 'pre_trip' THEN 1

@@ -1181,17 +1181,27 @@ func (h *LoungeBookingHandler) GetLoungeBookingByReference(c *gin.Context) {
 				for i, rel := range booking.RelatedBookings {
 					if authorizedLoungeIDs[rel.LoungeID] {
 						orig := *booking
-						orig.RelatedBookings = nil
+						origRelated := booking.RelatedBookings
+						allLounges := booking.AllLounges
+						loungeBookings := booking.LoungeBookings
+						masterRef := booking.MasterReference
+
 						if newPrimary, pErr := h.bookingRepo.GetLoungeBookingByID(rel.ID); pErr == nil && newPrimary != nil {
 							booking = newPrimary
 							var newRelated []models.LoungeBooking
+							orig.RelatedBookings = nil
+							orig.LoungeBookings = nil
+							orig.AllLounges = nil
 							newRelated = append(newRelated, orig)
-							for j, other := range orig.RelatedBookings {
+							for j, other := range origRelated {
 								if j != i && other.ID != booking.ID {
 									newRelated = append(newRelated, other)
 								}
 							}
 							booking.RelatedBookings = newRelated
+							booking.LoungeBookings = loungeBookings
+							booking.AllLounges = allLounges
+							booking.MasterReference = masterRef
 							break
 						}
 					}

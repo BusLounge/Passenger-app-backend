@@ -287,6 +287,9 @@ type LoungeBooking struct {
 	Guests    []LoungeBookingGuest    `db:"-" json:"guests,omitempty"`
 	PreOrders []LoungeBookingPreOrder `db:"-" json:"pre_orders,omitempty"`
 	RelatedBookings []LoungeBooking         `db:"-" json:"related_bookings,omitempty"`
+	LoungeBookings  []LoungeBooking         `db:"-" json:"lounge_bookings,omitempty"`
+	AllLounges      []LoungeBooking         `db:"-" json:"all_lounges,omitempty"`
+	MasterReference string                  `db:"-" json:"master_reference,omitempty"`
 	Orders          []LoungeOrder           `db:"-" json:"orders,omitempty"`
 	Transport       []TransportBooking      `db:"-" json:"transport,omitempty"`
 }
@@ -587,6 +590,9 @@ type LoungeBookingResponse struct {
 	Guests    []LoungeBookingGuest    `json:"guests,omitempty"`
 	PreOrders []LoungeBookingPreOrder `json:"pre_orders,omitempty"`
 	RelatedBookings []LoungeBooking         `db:"-" json:"related_bookings,omitempty"`
+	LoungeBookings  []LoungeBooking         `db:"-" json:"lounge_bookings,omitempty"`
+	AllLounges      []LoungeBooking         `db:"-" json:"all_lounges,omitempty"`
+	MasterReference string                  `db:"-" json:"master_reference,omitempty"`
 	Orders          []LoungeOrder           `db:"-" json:"orders,omitempty"`
 	Transport       []TransportBooking      `db:"-" json:"transport,omitempty"`
 }

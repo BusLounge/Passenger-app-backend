@@ -776,30 +776,31 @@ func (r *LoungeBookingRepository) GetLoungeBookingByID(bookingID uuid.UUID) (*mo
 		LEFT JOIN lounge_transport_locations ptl ON tb.pickup_location_id = ptl.id
 		WHERE tb.status != 'cancelled'
 		  AND (
-			-- Direct match by specific lounge booking record ID or physical lounge ID
-			tb.lounge_id = $1 OR tb.lounge_id = $2
-			-- OR fallback to master booking ID ONLY when tb.lounge_id is null
-			OR (
-				tb.lounge_id IS NULL AND $3 != '' AND tb.booking_id = $3
+			-- Direct match by specific lounge booking record ID
+			tb.booking_id = $1 OR tb.lounge_id = $1
+			OR
+			-- Linked via master booking OR physical lounge ID with STRICT leg-type matching
+			(
+				(
+					($3 != '' AND tb.booking_id = $3)
+					OR tb.lounge_id = $2
+				)
 				AND (
-					(tb.lounge_transport_type IS NOT NULL AND (
-						tb.lounge_transport_type = $4
-						OR ($4 = 'pre_trip' AND tb.lounge_transport_type = 'user_to_lounge')
-						OR ($4 = 'post_trip' AND tb.lounge_transport_type = 'user_to_location')
+					($4 = 'pre_trip' AND (
+						tb.lounge_transport_type IN ('pre_trip', 'user_to_lounge')
+						OR (tb.lounge_transport_type IS NULL AND tb.lounge_id = $2)
 					))
 					OR
-					(tb.lounge_transport_type IS NULL AND ($4 = 'pre_trip' OR $4 = 'standalone' OR $4 = ''))
+					($4 = 'post_trip' AND tb.lounge_transport_type IN ('post_trip', 'user_to_location'))
+					OR
+					($4 = 'transit' AND tb.lounge_transport_type = 'transit')
+					OR
+					($4 = 'standalone' AND (
+						tb.lounge_transport_type IS NULL 
+						OR tb.lounge_transport_type IN ('standalone', 'pre_trip', 'user_to_lounge')
+					) AND ($3 = '' OR tb.booking_id = $3))
 				)
 			)
-		  )
-		  -- Guard: even if tb.lounge_id matches, it must not contradict the leg type when lounge_transport_type is set
-		  AND (
-			tb.lounge_transport_type IS NULL
-			OR tb.lounge_transport_type = $4
-			OR ($4 = 'pre_trip' AND (tb.lounge_transport_type = 'user_to_lounge' OR tb.lounge_transport_type = 'pre_trip'))
-			OR ($4 = 'post_trip' AND (tb.lounge_transport_type = 'user_to_location' OR tb.lounge_transport_type = 'post_trip'))
-			OR ($4 = 'transit' AND tb.lounge_transport_type = 'transit')
-			OR ($4 = 'standalone')
 		  )
 		ORDER BY tb.created_at ASC
 	`
@@ -814,16 +815,21 @@ func (r *LoungeBookingRepository) GetLoungeBookingByID(bookingID uuid.UUID) (*mo
 // GetLoungeBookingByReference returns a booking by reference, master reference, or raw QR JSON
 func (r *LoungeBookingRepository) GetLoungeBookingByReference(reference string) (*models.LoungeBooking, error) {
 	cleanRef := strings.TrimSpace(reference)
+	var qrMasterRef string
 	if strings.HasPrefix(cleanRef, "{") {
 		var qrPayload struct {
-			Type             string `json:"type"`
-			BookingReference string `json:"booking_reference"`
-			BookingID        string `json:"booking_id"`
-			MasterRef        string `json:"master_reference"`
-			MasterID         string `json:"master_booking_id"`
-			Ref              string `json:"ref"`
+			Type             string   `json:"type"`
+			BookingReference string   `json:"booking_reference"`
+			BookingID        string   `json:"booking_id"`
+			MasterRef        string   `json:"master_reference"`
+			MasterID         string   `json:"master_booking_id"`
+			Ref              string   `json:"ref"`
+			LoungeRefs       []string `json:"lounge_references"`
 		}
 		if err := json.Unmarshal([]byte(cleanRef), &qrPayload); err == nil {
+			if qrPayload.MasterRef != "" {
+				qrMasterRef = qrPayload.MasterRef
+			}
 			if qrPayload.BookingReference != "" {
 				cleanRef = qrPayload.BookingReference
 			} else if qrPayload.MasterRef != "" {
@@ -892,23 +898,60 @@ func (r *LoungeBookingRepository) GetLoungeBookingByReference(reference string) 
 		return booking, err
 	}
 
-	// Fetch sibling lounge bookings under the same master booking
+	// Resolve master booking ID if missing on record but provided in QR payload
+	if booking.MasterBookingID == nil && qrMasterRef != "" {
+		var resolvedMasterID uuid.UUID
+		if rErr := r.db.Get(&resolvedMasterID, "SELECT id FROM bookings WHERE booking_reference = $1", qrMasterRef); rErr == nil {
+			booking.MasterBookingID = &resolvedMasterID
+			booking.MasterReference = qrMasterRef
+		}
+	}
+
+	// Populate MasterReference string
+	if booking.MasterBookingID != nil && booking.MasterReference == "" {
+		var mRef string
+		if rErr := r.db.Get(&mRef, "SELECT booking_reference FROM bookings WHERE id = $1", booking.MasterBookingID); rErr == nil {
+			booking.MasterReference = mRef
+		}
+	}
+
+	// Fetch all sibling lounge bookings under the same master booking
 	if booking.MasterBookingID != nil {
 		siblings, sErr := r.GetLoungeBookingsByBookingID(booking.MasterBookingID.String())
-		if sErr == nil && len(siblings) > 1 {
+		if sErr != nil {
+			log.Printf("ERROR: Failed to query sibling lounge bookings for master %s: %v", booking.MasterBookingID, sErr)
+		} else {
 			var related []models.LoungeBooking
+			var allLounges []models.LoungeBooking
+
+			// Build primary booking copy without cycle
+			primaryCopy := *booking
+			primaryCopy.RelatedBookings = nil
+			primaryCopy.LoungeBookings = nil
+			primaryCopy.AllLounges = nil
+			allLounges = append(allLounges, primaryCopy)
+
 			for _, sib := range siblings {
 				if sib.ID != booking.ID {
-					// Get full details including guests and pre-orders
+					// Get full details including guests, pre-orders, and transport
 					if fullSib, fErr := r.GetLoungeBookingByID(sib.ID); fErr == nil && fullSib != nil {
 						related = append(related, *fullSib)
+						allLounges = append(allLounges, *fullSib)
 					} else {
 						related = append(related, sib)
+						allLounges = append(allLounges, sib)
 					}
 				}
 			}
 			booking.RelatedBookings = related
+			booking.LoungeBookings = allLounges
+			booking.AllLounges = allLounges
 		}
+	} else {
+		// Single standalone booking with no master booking
+		primaryCopy := *booking
+		booking.LoungeBookings = []models.LoungeBooking{primaryCopy}
+		booking.AllLounges = []models.LoungeBooking{primaryCopy}
 	}
 
 	return booking, nil
@@ -929,7 +972,7 @@ func (r *LoungeBookingRepository) GetLoungeBookingsByBookingID(masterBookingID s
 			l.lounge_name, l.address as lounge_address
 		FROM lounge_bookings lb
 		JOIN lounges l ON lb.lounge_id = l.id
-		WHERE lb.master_booking_id = $1
+		WHERE (lb.master_booking_id::text = $1) AND lb.status != 'cancelled'
 		ORDER BY 
 			CASE lb.booking_type
 				WHEN 'pre_trip' THEN 1
