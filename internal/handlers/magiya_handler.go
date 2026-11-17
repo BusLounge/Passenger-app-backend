@@ -141,3 +141,76 @@ func (h *MagiyaHandler) SearchSchedules(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// GetTrackingRoute handles GET /api/v1/magiya/tracking/route
+func (h *MagiyaHandler) GetTrackingRoute(c *gin.Context) {
+	rawQuery := c.Request.URL.RawQuery
+	routeJSON, status, err := h.service.GetTrackingRoute(rawQuery)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to fetch Magiya tracking route")
+		c.JSON(status, gin.H{
+			"status":  false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Data(status, "application/json; charset=utf-8", routeJSON)
+}
+
+// GetTrackingStatus handles GET /api/v1/magiya/tracking/status
+func (h *MagiyaHandler) GetTrackingStatus(c *gin.Context) {
+	rawQuery := c.Request.URL.RawQuery
+	statusJSON, status, err := h.service.GetTrackingStatus(rawQuery)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to fetch Magiya tracking status")
+		c.JSON(status, gin.H{
+			"status":  false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Data(status, "application/json; charset=utf-8", statusJSON)
+}
+
+// GetTrackingPosition handles GET /api/v1/magiya/tracking/position
+func (h *MagiyaHandler) GetTrackingPosition(c *gin.Context) {
+	rawQuery := c.Request.URL.RawQuery
+	posJSON, status, err := h.service.GetTrackingPosition(rawQuery)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to fetch Magiya tracking position")
+		c.JSON(status, gin.H{
+			"status":  false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Data(status, "application/json; charset=utf-8", posJSON)
+}
+
+// BroadcastAuth handles POST /api/v1/magiya/broadcasting/auth
+func (h *MagiyaHandler) BroadcastAuth(c *gin.Context) {
+	socketID := c.PostForm("socket_id")
+	channelName := c.PostForm("channel_name")
+
+	if socketID == "" || channelName == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"message": "The socket_id and channel_name fields are required.",
+		})
+		return
+	}
+
+	authJSON, status, err := h.service.BroadcastAuth(socketID, channelName)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to authorize broadcast channel")
+		c.JSON(status, gin.H{
+			"status":  false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Data(status, "application/json; charset=utf-8", authJSON)
+}

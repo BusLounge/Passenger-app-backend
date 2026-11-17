@@ -1109,6 +1109,19 @@ func main() {
 
 			logger.Info("  GET /api/v1/magiya/seat-map")
 			magiya.GET("/seat-map", magiyaHandler.GetSeatLayout)
+
+			// Live Tracking Routes (Magiya Merchant Tracking V1.0)
+			logger.Info("  GET /api/v1/magiya/tracking/route")
+			magiya.GET("/tracking/route", magiyaHandler.GetTrackingRoute)
+
+			logger.Info("  GET /api/v1/magiya/tracking/status")
+			magiya.GET("/tracking/status", magiyaHandler.GetTrackingStatus)
+
+			logger.Info("  GET /api/v1/magiya/tracking/position")
+			magiya.GET("/tracking/position", magiyaHandler.GetTrackingPosition)
+
+			logger.Info("  POST /api/v1/magiya/broadcasting/auth")
+			magiya.POST("/broadcasting/auth", magiyaHandler.BroadcastAuth)
 		}
 		logger.Info("Magiya routes registered successfully")
 

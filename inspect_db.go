@@ -14,7 +14,7 @@ if err != nil {
 log.Fatal(err)
 }
 
-query := 
+query := `
 SELECT
     tc.table_name, 
     kcu.column_name, 
@@ -29,7 +29,7 @@ FROM
       ON ccu.constraint_name = tc.constraint_name
       AND ccu.table_schema = tc.table_schema
 WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name='lounge_booking_pre_orders';
-
+`
 rows, err := db.Query(query)
 if err != nil {
 log.Fatal(err)
