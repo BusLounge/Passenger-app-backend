@@ -214,3 +214,18 @@ func (h *MagiyaHandler) BroadcastAuth(c *gin.Context) {
 
 	c.Data(status, "application/json; charset=utf-8", authJSON)
 }
+
+// GetActiveBuses handles GET /api/v1/magiya/tracking/buses
+func (h *MagiyaHandler) GetActiveBuses(c *gin.Context) {
+	busesJSON, err := h.service.GetActiveTrackableBuses()
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to fetch trackable buses")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json; charset=utf-8", busesJSON)
+}

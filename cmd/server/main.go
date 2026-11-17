@@ -1120,6 +1120,9 @@ func main() {
 			logger.Info("  GET /api/v1/magiya/tracking/position")
 			magiya.GET("/tracking/position", magiyaHandler.GetTrackingPosition)
 
+			logger.Info("  GET /api/v1/magiya/tracking/buses")
+			magiya.GET("/tracking/buses", magiyaHandler.GetActiveBuses)
+
 			logger.Info("  POST /api/v1/magiya/broadcasting/auth")
 			magiya.POST("/broadcasting/auth", magiyaHandler.BroadcastAuth)
 		}
