@@ -1,0 +1,83 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Dashboard → New + → Blueprint → pick this repo/branch.
+# Variables marked `sync: false` are secrets: Render asks for their values when
+# the Blueprint is created, and they are never stored in git.
+services:
+  - type: web
+    name: passenger-app-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: singapore          # closest Render region to Sri Lanka
+    plan: starter              # "free" works but sleeps after 15 min idle (slow OTP/live tracking)
+    healthCheckPath: /health
+    autoDeploy: true           # redeploy on every push to the selected branch
+    envVars:
+      # --- App mode (PORT is set by Render automatically; do not add it) ---
+      - key: ENVIRONMENT
+        value: production
+      - key: GIN_MODE
+        value: release
+      - key: LOG_LEVEL
+        value: info
+
+      # --- Database (Supabase pooler URL, IPv4) ---
+      - key: DATABASE_URL
+        sync: false
+
+      # --- JWT (reuse the current values to keep existing logins valid) ---
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+
+      # --- SMS (Dialog eSMS) ---
+      - key: SMS_MODE
+        value: production
+      - key: DIALOG_SMS_METHOD
+        value: url
+      - key: DIALOG_SMS_ESMSQK
+        sync: false
+      - key: DIALOG_SMS_MASK
+        sync: false
+      - key: PASSENGER_APP_HASH
+        sync: false
+      - key: DRIVER_APP_HASH
+        sync: false
+
+      # --- Magiya bus API ---
+      - key: MAGIYA_API_URL
+        sync: false
+      - key: MAGIYA_MERCHANT_ID
+        sync: false
+      - key: MAGIYA_APP_ID
+        sync: false
+      - key: MAGIYA_SECRET_KEY
+        sync: false
+
+      # --- Payments (update return/webhook URLs to the Render URL) ---
+      - key: PAYABLE_ENVIRONMENT
+        sync: false
+      - key: PAYABLE_MERCHANT_KEY
+        sync: false
+      - key: PAYABLE_MERCHANT_TOKEN
+        sync: false
+      - key: PAYABLE_LOGO_URL
+        sync: false
+      - key: PAYABLE_RETURN_URL
+        sync: false
+      - key: PAYABLE_WEBHOOK_URL
+        sync: false
+      - key: PAYHERE_MERCHANT_ID
+        sync: false
+      - key: PAYHERE_MERCHANT_SECRET
+        sync: false
+
+      # --- Push notifications ---
+      - key: ONESIGNAL_REST_API_KEY
+        sync: false
+
+      # Optional tuning (app defaults are used when unset): JWT_ACCESS_TOKEN_EXPIRY,
+      # JWT_REFRESH_TOKEN_EXPIRY, OTP_*, RATE_LIMIT_*, CORS_*, DATABASE_MAX_*,
+      # BCRYPT_COST, ENABLE_*_LOGGING — add them in the dashboard if your .env
+      # sets non-default values.
